@@ -61,6 +61,12 @@ function colorFor(name) {
   return COLORS[Math.abs([...name].reduce((a,c)=>a+c.charCodeAt(0),0)) % COLORS.length];
 }
 
+function statusColors(status) {
+  if (status === "Чакаща") return { bg:"#e8a820", soft:"#fff7d7", text:"#6b4a00", border:"#e8a820" };
+  if (status === "Отменена") return { bg:"#6b7280", soft:"#eef0f2", text:"#3d424a", border:"#6b7280" };
+  return { bg:"#e8604c", soft:"#fde8e5", text:"#8f241c", border:"#e8604c" };
+}
+
 function exportCSV(reservations) {
   const header = "Дата,Клиент,Телефон,Бележки,Статус";
   const rows = reservations.map(r =>
@@ -193,11 +199,12 @@ export default function App() {
   const openEdit = (r) => {
     setEditId(r.id);
     setAddDates([]);
+    setSelectedDate(r.date);
     setForm({name:r.name,phone:r.phone||"",notes:r.notes||"",status:r.status||"Потвърдена"});
     setModal("edit");
   };
   const closeForm = () => {
-    if (modal==="edit" && selectedDate) {
+    if (modal==="edit" && selectedDate && !multiSelect) {
       setModal("day");
       return;
     }
@@ -362,7 +369,47 @@ export default function App() {
                   : "Натиснете няколко дни в календара, после запазете резервация за всички избрани дати."}
               </div>
             )}
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
+              {["Потвърдена","Чакаща","Отменена"].map(status=>{
+                const c = statusColors(status);
+                return (
+                  <span key={status} style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,color:c.text,fontFamily:"sans-serif",fontWeight:"bold"}}>
+                    <span style={{width:12,height:12,borderRadius:3,background:c.bg,display:"inline-block"}}></span>
+                    {status}
+                  </span>
+                );
+              })}
+            </div>
           </div>
+
+          {multiSelect && selectedDates.length > 0 && (
+            <div style={{background:"#fff",borderRadius:14,padding:"12px",marginBottom:12,boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
+              <div style={{fontWeight:"bold",color:"#1a3d24",fontSize:15,marginBottom:8}}>Резервации за избраните дати</div>
+              {selectedDates.map(ds=>{
+                const dayReservations = resForDate(ds);
+                return (
+                  <div key={ds} style={{borderTop:"1px solid #eee4d8",paddingTop:8,marginTop:8}}>
+                    <div style={{fontSize:13,fontWeight:"bold",color:"#2c5f3a",marginBottom:6,fontFamily:"sans-serif"}}>{fmtDate(ds)}</div>
+                    {dayReservations.length===0 ? (
+                      <div style={{fontSize:12,color:"#aaa",fontFamily:"sans-serif",marginBottom:5}}>Няма резервации</div>
+                    ) : dayReservations.map(r=>{
+                      const c = statusColors(r.status);
+                      return (
+                        <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,background:c.soft,borderLeft:`4px solid ${c.border}`,borderRadius:9,padding:"8px 9px",marginBottom:6}}>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontWeight:"bold",fontSize:14,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.name}</div>
+                            <div style={{fontSize:11,color:c.text,fontFamily:"sans-serif",fontWeight:"bold"}}>{r.status || "Потвърдена"}</div>
+                          </div>
+                          <button onClick={()=>openEdit(r)} style={S.smallBtn("#e8a820")}>✏️</button>
+                          <button onClick={()=>deleteRes(r.id)} style={S.smallBtn("#e8604c")}>🗑</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Day labels */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,marginBottom:3}}>
@@ -389,9 +436,21 @@ export default function App() {
                 }}>
                   {isSelected && <div style={{position:"absolute",top:4,right:5,background:"#e8a820",color:"#fff",borderRadius:999,width:17,height:17,fontSize:11,lineHeight:"17px",textAlign:"center",fontFamily:"sans-serif",fontWeight:"bold"}}>✓</div>}
                   <div style={{fontSize:14,fontWeight:isToday?"bold":"normal",color:isToday?"#2c5f3a":"#2a2118",marginBottom:3}}>{day}</div>
-                  {res.slice(0,2).map(r=>(
-                    <div key={r.id} style={{background:colorFor(r.name),color:"#fff",fontSize:9,borderRadius:4,padding:"1px 4px",marginBottom:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontFamily:"sans-serif"}}>{r.name}</div>
-                  ))}
+                  {res.slice(0,2).map(r=>{
+                    const c = statusColors(r.status);
+                    return (
+                      <div key={r.id} style={{background:c.bg,color:"#fff",fontSize:9,borderRadius:4,padding:"1px 3px",marginBottom:2,fontFamily:"sans-serif",display:"flex",alignItems:"center",gap:3,minWidth:0}}>
+                        <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",flex:1}}>{r.name}</span>
+                        <button
+                          onClick={(e)=>{e.stopPropagation(); deleteRes(r.id);}}
+                          title="Изтрий"
+                          style={{border:"none",background:"rgba(255,255,255,0.22)",color:"#fff",borderRadius:4,width:14,height:14,lineHeight:"12px",fontSize:10,padding:0,cursor:"pointer",flexShrink:0}}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })}
                   {res.length>2 && <div style={{fontSize:9,color:"#888",fontFamily:"sans-serif"}}>+{res.length-2}</div>}
                 </div>
               );
