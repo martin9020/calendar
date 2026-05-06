@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   deleteReservation as deleteCloudReservation,
+  deleteReservations as deleteCloudReservations,
   fetchReservations,
   insertReservations,
   isSupabaseConfigured,
@@ -267,6 +268,26 @@ export default function App() {
     }
   };
 
+  const deleteSelectedDateReservations = async () => {
+    const selectedIds = reservations
+      .filter(r=>selectedDates.includes(r.date))
+      .map(r=>r.id);
+
+    if (!selectedIds.length) return;
+
+    try {
+      setBusy(true);
+      if (cloudMode) await deleteCloudReservations(selectedIds);
+      const next = reservations.filter(r=>!selectedIds.includes(r.id));
+      cloudMode ? setReservations(next) : saveLocal(next);
+      showMessage(`✅ Изтрити ${selectedIds.length} резервации от избраните дати.`);
+    } catch (error) {
+      showMessage(`❌ ${error.message || "Грешка при изтриване."}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleImport = (e) => {
     const file = e.target.files[0]; if(!file) return;
     const reader = new FileReader();
@@ -296,6 +317,9 @@ export default function App() {
   const cells = Array.from({length:totalCells},(_,i)=>{ const d=i-firstDay+1; return(d>=1&&d<=daysInMonth)?d:null; });
 
   const dayRes = selectedDate ? resForDate(selectedDate) : [];
+  const selectedReservations = selectedDates.length
+    ? reservations.filter(r=>selectedDates.includes(r.date))
+    : [];
 
   const S = {
     btn: (bg,col)=>({background:bg,color:col,border:"none",borderRadius:10,padding:"10px 16px",fontSize:14,fontWeight:"bold",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}),
@@ -357,6 +381,16 @@ export default function App() {
                     }}
                   >
                     + Резервация за {selectedDates.length} дати
+                  </button>
+                  <button
+                    onClick={deleteSelectedDateReservations}
+                    disabled={!selectedReservations.length || busy}
+                    style={{
+                      ...S.btn(selectedReservations.length && !busy ? "#e8604c" : "#d8d0c4", selectedReservations.length && !busy ? "#fff" : "#777"),
+                      cursor:selectedReservations.length && !busy ? "pointer" : "not-allowed"
+                    }}
+                  >
+                    🗑 Изтрий всички ({selectedReservations.length})
                   </button>
                   <button onClick={()=>setSelectedDates([])} style={S.btn("#f0e6db","#6b4a2f")}>Изчисти</button>
                 </>

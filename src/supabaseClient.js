@@ -77,3 +77,14 @@ export async function deleteReservation(id) {
 
   if (error) throw error;
 }
+
+export async function deleteReservations(ids) {
+  if (!ids.length) return;
+
+  const { error } = await supabase
+    .from("reservations")
+    .delete()
+    .in("id", ids);
+
+  if (error) throw error;
+}
