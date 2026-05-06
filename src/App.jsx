@@ -110,7 +110,6 @@ export default function App() {
   const [month, setMonth] = useState(today.getMonth());
   const [reservations, setReservations] = useState([]);
   const [selectedDate, setSelectedDate] = useState(null);
-  const [multiSelect, setMultiSelect] = useState(true);
   const [selectedDates, setSelectedDates] = useState([]);
   const [addDates, setAddDates] = useState([]);
   const [modal, setModal] = useState(null);
@@ -174,24 +173,11 @@ export default function App() {
       : sortDateStrings([...dates, ds])
     );
   };
-  const toggleMultiSelect = () => {
-    setMultiSelect(active => {
-      if (active) setSelectedDates([]);
-      setModal(null);
-      return !active;
-    });
-  };
   const openDay = (ds) => {
-    if (multiSelect) {
-      toggleSelectedDate(ds);
-      return;
-    }
-    setSelectedDate(ds);
-    setAddDates([]);
-    setModal("day");
+    toggleSelectedDate(ds);
   };
   const openAdd = (ds) => {
-    const dates = sortDateStrings(ds ? [ds] : (multiSelect && selectedDates.length ? selectedDates : [selectedDate || todayStr]));
+    const dates = sortDateStrings(ds ? [ds] : (selectedDates.length ? selectedDates : [selectedDate || todayStr]));
     setSelectedDate(dates[0] || null);
     setAddDates(dates);
     setForm({name:"",phone:"",notes:"",status:"Потвърдена"});
@@ -205,11 +191,7 @@ export default function App() {
     setModal("edit");
   };
   const closeForm = () => {
-    if (modal==="edit" && selectedDate && !multiSelect) {
-      setModal("day");
-      return;
-    }
-    setModal(addDates.length===1 && selectedDate && !multiSelect ? "day" : null);
+    setModal(null);
   };
 
   const submitAdd = async () => {
@@ -367,42 +349,33 @@ export default function App() {
 
           <div style={{background:"#fff",borderRadius:14,padding:"12px",marginBottom:12,boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
             <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-              <button onClick={toggleMultiSelect} style={S.btn(multiSelect?"#e8a820":"#e8f0e8",multiSelect?"#fff":"#2c5f3a")}>
-                {multiSelect?"✓ Избор на дати":"☑ Избери няколко дати"}
+              <button
+                onClick={()=>openAdd()}
+                disabled={!selectedDates.length}
+                style={{
+                  ...S.btn(selectedDates.length?"#2c5f3a":"#d8d0c4",selectedDates.length?"#fff":"#777"),
+                  cursor:selectedDates.length?"pointer":"not-allowed"
+                }}
+              >
+                + Резервация за {selectedDates.length} дати
               </button>
-              {multiSelect && (
-                <>
-                  <button
-                    onClick={()=>openAdd()}
-                    disabled={!selectedDates.length}
-                    style={{
-                      ...S.btn(selectedDates.length?"#2c5f3a":"#d8d0c4",selectedDates.length?"#fff":"#777"),
-                      cursor:selectedDates.length?"pointer":"not-allowed"
-                    }}
-                  >
-                    + Резервация за {selectedDates.length} дати
-                  </button>
-                  <button
-                    onClick={deleteSelectedDateReservations}
-                    disabled={!selectedReservations.length || busy}
-                    style={{
-                      ...S.btn(selectedReservations.length && !busy ? "#e8604c" : "#d8d0c4", selectedReservations.length && !busy ? "#fff" : "#777"),
-                      cursor:selectedReservations.length && !busy ? "pointer" : "not-allowed"
-                    }}
-                  >
-                    🗑 Изтрий всички ({selectedReservations.length})
-                  </button>
-                  <button onClick={()=>setSelectedDates([])} style={S.btn("#f0e6db","#6b4a2f")}>Изчисти</button>
-                </>
-              )}
+              <button
+                onClick={deleteSelectedDateReservations}
+                disabled={!selectedReservations.length || busy}
+                style={{
+                  ...S.btn(selectedReservations.length && !busy ? "#e8604c" : "#d8d0c4", selectedReservations.length && !busy ? "#fff" : "#777"),
+                  cursor:selectedReservations.length && !busy ? "pointer" : "not-allowed"
+                }}
+              >
+                🗑 Изтрий всички ({selectedReservations.length})
+              </button>
+              <button onClick={()=>setSelectedDates([])} style={S.btn("#f0e6db","#6b4a2f")}>Изчисти</button>
             </div>
-            {multiSelect && (
-              <div style={{marginTop:8,fontSize:12,color:selectedDates.length?"#2c5f3a":"#9c8b78",fontFamily:"sans-serif",lineHeight:1.4}}>
-                {selectedDates.length
-                  ? `Избрани: ${fmtDateList(selectedDates)}`
-                  : "Натиснете няколко дни в календара, после запазете резервация за всички избрани дати."}
-              </div>
-            )}
+            <div style={{marginTop:8,fontSize:12,color:selectedDates.length?"#2c5f3a":"#9c8b78",fontFamily:"sans-serif",lineHeight:1.4}}>
+              {selectedDates.length
+                ? `Избрани: ${fmtDateList(selectedDates)}`
+                : "Натиснете няколко дни в календара, после запазете резервация за всички избрани дати."}
+            </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
               {["Потвърдена","Чакаща","Отменена"].map(status=>{
                 const c = statusColors(status);
@@ -462,7 +435,7 @@ export default function App() {
             })}
           </div>
           <div style={{textAlign:"center",marginTop:12,fontSize:12,color:"#aaa",fontFamily:"sans-serif"}}>
-            {multiSelect ? "Изберете няколко дни → добавете една резервация за всички" : "Натиснете ден → добавете резервация"}
+            Изберете няколко дни → добавете една резервация за всички
           </div>
         </div>
       ) : (
