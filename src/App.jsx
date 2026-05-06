@@ -417,12 +417,15 @@ export default function App() {
                   {res.slice(0,2).map(r=>{
                     const c = statusColors(r.status);
                     return (
-                      <div key={r.id} style={{background:c.bg,color:"#fff",fontSize:9,borderRadius:4,padding:"1px 3px",marginBottom:2,fontFamily:"sans-serif",display:"flex",alignItems:"center",gap:3,minWidth:0}}>
-                        <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",flex:1}}>{r.name}</span>
+                      <div key={r.id} style={{background:c.bg,color:"#fff",borderRadius:5,padding:"4px 5px",marginBottom:3,fontFamily:"sans-serif",display:"flex",alignItems:"flex-start",gap:4,minWidth:0,minHeight:33,lineHeight:1.12}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:12,fontWeight:"bold",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.name}</div>
+                          {r.phone && <div style={{fontSize:10,opacity:0.95,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:2}}>☎ {r.phone}</div>}
+                        </div>
                         <button
                           onClick={(e)=>{e.stopPropagation(); deleteRes(r.id);}}
                           title="Изтрий"
-                          style={{border:"none",background:"rgba(255,255,255,0.22)",color:"#fff",borderRadius:4,width:14,height:14,lineHeight:"12px",fontSize:10,padding:0,cursor:"pointer",flexShrink:0}}
+                          style={{border:"none",background:"rgba(255,255,255,0.22)",color:"#fff",borderRadius:4,width:16,height:16,lineHeight:"14px",fontSize:11,padding:0,cursor:"pointer",flexShrink:0}}
                         >
                           ×
                         </button>
