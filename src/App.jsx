@@ -39,6 +39,16 @@ function fmtDate(ds) {
   return `${d} ${MONTHS_BG[m]} ${y}`;
 }
 
+function sortDateStrings(dates) {
+  return [...dates].sort((a,b)=>a.localeCompare(b));
+}
+
+function fmtDateList(dates) {
+  const sorted = sortDateStrings(dates);
+  if (sorted.length <= 3) return sorted.map(fmtDate).join(", ");
+  return `${sorted.slice(0,3).map(fmtDate).join(", ")} + още ${sorted.length-3}`;
+}
+
 function colorFor(name) {
   return COLORS[Math.abs([...name].reduce((a,c)=>a+c.charCodeAt(0),0)) % COLORS.length];
 }
@@ -85,6 +95,9 @@ export default function App() {
   const [month, setMonth] = useState(today.getMonth());
   const [reservations, setReservations] = useState([]);
   const [selectedDate, setSelectedDate] = useState(null);
+  const [multiSelect, setMultiSelect] = useState(false);
+  const [selectedDates, setSelectedDates] = useState([]);
+  const [addDates, setAddDates] = useState([]);
   const [modal, setModal] = useState(null);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({name:"",phone:"",notes:"",status:"Потвърдена"});
@@ -101,13 +114,62 @@ export default function App() {
   const prevMonth = () => { if(month===0){setMonth(11);setYear(y=>y-1);}else setMonth(m=>m-1); };
   const nextMonth = () => { if(month===11){setMonth(0);setYear(y=>y+1);}else setMonth(m=>m+1); };
 
-  const openDay = (ds) => { setSelectedDate(ds); setModal("day"); };
-  const openAdd = (ds) => { setSelectedDate(ds||selectedDate); setForm({name:"",phone:"",notes:"",status:"Потвърдена"}); setModal("add"); };
-  const openEdit = (r) => { setEditId(r.id); setForm({name:r.name,phone:r.phone||"",notes:r.notes||"",status:r.status||"Потвърдена"}); setModal("edit"); };
+  const toggleSelectedDate = (ds) => {
+    setSelectedDates(dates => dates.includes(ds)
+      ? dates.filter(d=>d!==ds)
+      : sortDateStrings([...dates, ds])
+    );
+  };
+  const toggleMultiSelect = () => {
+    setMultiSelect(active => {
+      if (active) setSelectedDates([]);
+      setModal(null);
+      return !active;
+    });
+  };
+  const openDay = (ds) => {
+    if (multiSelect) {
+      toggleSelectedDate(ds);
+      return;
+    }
+    setSelectedDate(ds);
+    setAddDates([]);
+    setModal("day");
+  };
+  const openAdd = (ds) => {
+    const dates = sortDateStrings(ds ? [ds] : (multiSelect && selectedDates.length ? selectedDates : [selectedDate || todayStr]));
+    setSelectedDate(dates[0] || null);
+    setAddDates(dates);
+    setForm({name:"",phone:"",notes:"",status:"Потвърдена"});
+    setModal("add");
+  };
+  const openEdit = (r) => {
+    setEditId(r.id);
+    setAddDates([]);
+    setForm({name:r.name,phone:r.phone||"",notes:r.notes||"",status:r.status||"Потвърдена"});
+    setModal("edit");
+  };
+  const closeForm = () => {
+    if (modal==="edit" && selectedDate) {
+      setModal("day");
+      return;
+    }
+    setModal(addDates.length===1 && selectedDate && !multiSelect ? "day" : null);
+  };
 
   const submitAdd = () => {
-    if(!form.name.trim()) return;
-    save([...reservations,{id:Date.now(),date:selectedDate,...form}]);
+    if(!form.name.trim() || !addDates.length) return;
+    const baseId = Date.now();
+    const created = addDates.map((date, index)=>({id:baseId+index,date,...form}));
+    save([...reservations,...created]);
+    if (created.length > 1) {
+      setSelectedDates([]);
+      setMultiSelect(false);
+      setMsg(`✅ Добавени ${created.length} резервации!`);
+      setTimeout(()=>setMsg(""),3000);
+      setModal(null);
+      return;
+    }
     setModal("day");
   };
   const submitEdit = () => {
@@ -178,6 +240,36 @@ export default function App() {
             <button onClick={nextMonth} style={{background:"#e8f0e8",color:"#2c5f3a",border:"none",borderRadius:8,padding:"8px 14px",fontSize:14,fontWeight:"bold",cursor:"pointer"}}>▶</button>
           </div>
 
+          <div style={{background:"#fff",borderRadius:14,padding:"12px",marginBottom:12,boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+              <button onClick={toggleMultiSelect} style={S.btn(multiSelect?"#e8a820":"#e8f0e8",multiSelect?"#fff":"#2c5f3a")}>
+                {multiSelect?"✓ Избор на дати":"☑ Избери няколко дати"}
+              </button>
+              {multiSelect && (
+                <>
+                  <button
+                    onClick={()=>openAdd()}
+                    disabled={!selectedDates.length}
+                    style={{
+                      ...S.btn(selectedDates.length?"#2c5f3a":"#d8d0c4",selectedDates.length?"#fff":"#777"),
+                      cursor:selectedDates.length?"pointer":"not-allowed"
+                    }}
+                  >
+                    + Резервация за {selectedDates.length} дати
+                  </button>
+                  <button onClick={()=>setSelectedDates([])} style={S.btn("#f0e6db","#6b4a2f")}>Изчисти</button>
+                </>
+              )}
+            </div>
+            {multiSelect && (
+              <div style={{marginTop:8,fontSize:12,color:selectedDates.length?"#2c5f3a":"#9c8b78",fontFamily:"sans-serif",lineHeight:1.4}}>
+                {selectedDates.length
+                  ? `Избрани: ${fmtDateList(selectedDates)}`
+                  : "Натиснете няколко дни в календара, после запазете резервация за всички избрани дати."}
+              </div>
+            )}
+          </div>
+
           {/* Day labels */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,marginBottom:3}}>
             {DAYS_BG.map(d=>(
@@ -192,13 +284,16 @@ export default function App() {
               const ds = dateStr(year,month,day);
               const res = resForDate(ds);
               const isToday = ds===todayStr;
+              const isSelected = selectedDates.includes(ds);
               return (
                 <div key={i} onClick={()=>openDay(ds)} style={{
-                  background:isToday?"#e8f5ec":"#fff",
-                  border:isToday?"2px solid #2c5f3a":"1px solid #e8e0d4",
+                  background:isSelected?"#fff7d7":(isToday?"#e8f5ec":"#fff"),
+                  border:isSelected?"2px solid #e8a820":(isToday?"2px solid #2c5f3a":"1px solid #e8e0d4"),
                   borderRadius:10,minHeight:68,padding:"5px 6px",cursor:"pointer",
-                  boxShadow:res.length?"0 2px 6px rgba(44,95,58,0.12)":"none"
+                  boxShadow:isSelected?"0 2px 8px rgba(232,168,32,0.25)":(res.length?"0 2px 6px rgba(44,95,58,0.12)":"none"),
+                  position:"relative"
                 }}>
+                  {isSelected && <div style={{position:"absolute",top:4,right:5,background:"#e8a820",color:"#fff",borderRadius:999,width:17,height:17,fontSize:11,lineHeight:"17px",textAlign:"center",fontFamily:"sans-serif",fontWeight:"bold"}}>✓</div>}
                   <div style={{fontSize:14,fontWeight:isToday?"bold":"normal",color:isToday?"#2c5f3a":"#2a2118",marginBottom:3}}>{day}</div>
                   {res.slice(0,2).map(r=>(
                     <div key={r.id} style={{background:colorFor(r.name),color:"#fff",fontSize:9,borderRadius:4,padding:"1px 4px",marginBottom:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",fontFamily:"sans-serif"}}>{r.name}</div>
@@ -208,7 +303,9 @@ export default function App() {
               );
             })}
           </div>
-          <div style={{textAlign:"center",marginTop:12,fontSize:12,color:"#aaa",fontFamily:"sans-serif"}}>Натиснете ден → добавете резервация</div>
+          <div style={{textAlign:"center",marginTop:12,fontSize:12,color:"#aaa",fontFamily:"sans-serif"}}>
+            {multiSelect ? "Изберете няколко дни → добавете една резервация за всички" : "Натиснете ден → добавете резервация"}
+          </div>
         </div>
       ) : (
         // LIST
@@ -270,11 +367,20 @@ export default function App() {
 
       {/* ADD / EDIT MODAL */}
       {(modal==="add"||modal==="edit") && (
-        <Modal onClose={()=>setModal(selectedDate?"day":null)}>
+        <Modal onClose={closeForm}>
           <h2 style={{margin:"0 0 16px",color:"#1a3d24",fontSize:19}}>
             {modal==="add"?"➕ Нова резервация":"✏️ Промени резервация"}
           </h2>
-          {modal==="add"&&<div style={{color:"#2c5f3a",fontWeight:"bold",marginBottom:14,fontSize:15}}>📅 {fmtDate(selectedDate)}</div>}
+          {modal==="add"&&(
+            <div style={{color:"#2c5f3a",fontWeight:"bold",marginBottom:14,fontSize:15}}>
+              📅 {addDates.length>1 ? `${addDates.length} избрани дати` : fmtDate(addDates[0] || selectedDate)}
+              {addDates.length>1 && (
+                <div style={{fontSize:12,color:"#6b7b63",fontWeight:"normal",marginTop:4,lineHeight:1.35}}>
+                  {fmtDateList(addDates)}
+                </div>
+              )}
+            </div>
+          )}
 
           {[
             {key:"name",label:"👤 Клиент *",placeholder:"Иван Иванов"},
@@ -299,9 +405,9 @@ export default function App() {
 
           <div style={{display:"flex",gap:10}}>
             <button onClick={modal==="add"?submitAdd:submitEdit} style={{...S.btn("#2c5f3a","#fff"),flex:1,fontSize:16,padding:"13px"}}>
-              ✅ Запази
+              {modal==="add" && addDates.length>1 ? `✅ Запази за ${addDates.length} дати` : "✅ Запази"}
             </button>
-            <button onClick={()=>setModal(selectedDate?"day":null)} style={{...S.btn("#e0dbd4","#555"),flex:1,fontSize:16,padding:"13px"}}>
+            <button onClick={closeForm} style={{...S.btn("#e0dbd4","#555"),flex:1,fontSize:16,padding:"13px"}}>
               Отказ
             </button>
           </div>
