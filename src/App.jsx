@@ -80,13 +80,31 @@ function statusColors(status) {
 }
 
 function reservationKey(reservation) {
-  const name = (reservation.name || "").trim().toLowerCase();
-  const phone = (reservation.phone || "").replace(/\D/g, "");
-  return `${name}|${phone}`;
+  return normalizeText(reservation.name);
 }
 
 function uniqueReservationCount(reservations) {
-  return new Set(reservations.map(reservationKey)).size;
+  const sorted = [...reservations]
+    .filter(r => reservationKey(r))
+    .sort((a, b) => reservationKey(a).localeCompare(reservationKey(b)) || a.date.localeCompare(b.date));
+
+  let count = 0;
+  let previousKey = "";
+  let previousDate = null;
+
+  sorted.forEach((reservation) => {
+    const key = reservationKey(reservation);
+    const currentDate = dateOrdinal(reservation.date);
+
+    if (key !== previousKey || previousDate === null || currentDate - previousDate > 1) {
+      count += 1;
+    }
+
+    previousKey = key;
+    previousDate = currentDate;
+  });
+
+  return count;
 }
 
 function normalizeText(value) {
@@ -102,12 +120,6 @@ function reservationSignature(reservation) {
   ].join("|");
 }
 
-function reservationGroupKey(reservation) {
-  return reservation.createdAt
-    ? `created:${reservation.createdAt}`
-    : `signature:${reservationSignature(reservation)}`;
-}
-
 function dateOrdinal(ds) {
   const { y, m, d } = parseDate(ds);
   return Date.UTC(y, m, d) / 86400000;
@@ -115,9 +127,9 @@ function dateOrdinal(ds) {
 
 function getReservationBatch(target, reservations) {
   if (!target) return [];
-  const groupKey = reservationGroupKey(target);
+  const key = reservationKey(target);
   const matches = reservations
-    .filter(r => reservationGroupKey(r) === groupKey)
+    .filter(r => reservationKey(r) === key)
     .sort((a, b) => a.date.localeCompare(b.date) || String(a.id).localeCompare(String(b.id)));
   const targetIndex = matches.findIndex(r => r.id === target.id);
 
