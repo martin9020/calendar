@@ -69,6 +69,25 @@ export async function updateReservation(id, form) {
   return fromRow(data);
 }
 
+export async function updateReservations(ids, form) {
+  if (!ids.length) return [];
+
+  const { data, error } = await supabase
+    .from("reservations")
+    .update({
+      name: form.name,
+      phone: form.phone || null,
+      notes: form.notes || null,
+      status: form.status || "Потвърдена",
+      updated_at: new Date().toISOString(),
+    })
+    .in("id", ids)
+    .select("id,date,name,phone,notes,status");
+
+  if (error) throw error;
+  return (data || []).map(fromRow);
+}
+
 export async function deleteReservation(id) {
   const { error } = await supabase
     .from("reservations")

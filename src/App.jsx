@@ -6,7 +6,7 @@ import {
   insertReservations,
   isSupabaseConfigured,
   supabase,
-  updateReservation,
+  updateReservations as updateCloudReservations,
 } from "./supabaseClient";
 
 const MONTHS_BG = ["Януари","Февруари","Март","Април","Май","Юни","Юли","Август","Септември","Октомври","Ноември","Декември"];
@@ -78,6 +78,48 @@ function uniqueReservationCount(reservations) {
   return new Set(reservations.map(reservationKey)).size;
 }
 
+function normalizeText(value) {
+  return (value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function reservationSignature(reservation) {
+  return [
+    normalizeText(reservation.name),
+    (reservation.phone || "").replace(/\D/g, ""),
+    normalizeText(reservation.notes),
+    reservation.status || "Потвърдена",
+  ].join("|");
+}
+
+function dateOrdinal(ds) {
+  const { y, m, d } = parseDate(ds);
+  return Date.UTC(y, m, d) / 86400000;
+}
+
+function getReservationBatch(target, reservations) {
+  if (!target) return [];
+  const signature = reservationSignature(target);
+  const matches = reservations
+    .filter(r => reservationSignature(r) === signature)
+    .sort((a, b) => a.date.localeCompare(b.date) || String(a.id).localeCompare(String(b.id)));
+  const targetIndex = matches.findIndex(r => r.id === target.id);
+
+  if (targetIndex === -1) return [target];
+
+  let start = targetIndex;
+  let end = targetIndex;
+
+  while (start > 0 && dateOrdinal(matches[start].date) - dateOrdinal(matches[start - 1].date) <= 1) {
+    start -= 1;
+  }
+
+  while (end < matches.length - 1 && dateOrdinal(matches[end + 1].date) - dateOrdinal(matches[end].date) <= 1) {
+    end += 1;
+  }
+
+  return matches.slice(start, end + 1);
+}
+
 function exportCSV(reservations) {
   const header = "Дата,Клиент,Телефон,Бележки,Статус";
   const rows = reservations.map(r =>
@@ -123,7 +165,7 @@ export default function App() {
   const [selectedDates, setSelectedDates] = useState([]);
   const [addDates, setAddDates] = useState([]);
   const [modal, setModal] = useState(null);
-  const [editId, setEditId] = useState(null);
+  const [editIds, setEditIds] = useState([]);
   const [form, setForm] = useState({name:"",phone:"",notes:"",status:"Потвърдена"});
   const [view, setView] = useState("calendar");
   const [msg, setMsg] = useState("");
@@ -190,18 +232,22 @@ export default function App() {
     const dates = sortDateStrings(ds ? [ds] : (selectedDates.length ? selectedDates : [selectedDate || todayStr]));
     setSelectedDate(dates[0] || null);
     setAddDates(dates);
+    setEditIds([]);
     setForm({name:"",phone:"",notes:"",status:"Потвърдена"});
     setModal("add");
   };
   const openEdit = (r) => {
-    setEditId(r.id);
-    setAddDates([]);
-    setSelectedDate(r.date);
+    const batch = getReservationBatch(r, reservations);
+    const dates = sortDateStrings([...new Set(batch.map(item => item.date))]);
+    setEditIds(batch.map(item => item.id));
+    setAddDates(dates);
+    setSelectedDate(dates[0] || r.date);
     setForm({name:r.name,phone:r.phone||"",notes:r.notes||"",status:r.status||"Потвърдена"});
     setModal("edit");
   };
   const closeForm = () => {
     setModal(null);
+    setEditIds([]);
   };
 
   const submitAdd = async () => {
@@ -232,15 +278,19 @@ export default function App() {
   };
   const submitEdit = async () => {
     if(!form.name.trim()) return;
+    const ids = editIds.length ? editIds : [];
+    if (!ids.length) return;
     try {
       setBusy(true);
       if (cloudMode) {
-        const saved = await updateReservation(editId, form);
-        setReservations(data=>data.map(r=>r.id===editId?saved:r));
+        const saved = await updateCloudReservations(ids, form);
+        const savedById = new Map(saved.map(r => [r.id, r]));
+        setReservations(data=>data.map(r=>savedById.get(r.id)||r));
       } else {
-        saveLocal(reservations.map(r=>r.id===editId?{...r,...form}:r));
+        saveLocal(reservations.map(r=>ids.includes(r.id)?{...r,...form}:r));
       }
       setModal("day");
+      showMessage(ids.length > 1 ? `✅ Променени ${ids.length} дни от резервацията.` : "✅ Резервацията е променена.");
     } catch (error) {
       showMessage(`❌ ${error.message || "Грешка при промяна."}`);
     } finally {
@@ -321,7 +371,7 @@ export default function App() {
   };
 
   return (
-    <div style={{minHeight:"100vh",background:"#faf7f2",fontFamily:"Georgia, serif",color:"#2a2118"}}>
+    <div style={{minHeight:"100vh",background:"#faf7f2",fontFamily:"Georgia, serif",color:"#2a2118",overflowX:"hidden"}}>
 
       {/* HEADER */}
       <div style={{background:"linear-gradient(135deg,#2c5f3a,#1a3d24)",color:"#fff",padding:"16px 20px",boxShadow:"0 4px 20px rgba(0,0,0,0.2)"}}>
@@ -400,53 +450,62 @@ export default function App() {
             </div>
           </div>
 
-          {/* Day labels */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,marginBottom:3}}>
-            {DAYS_BG.map(d=>(
-              <div key={d} style={{textAlign:"center",fontWeight:"bold",fontSize:11,color:"#2c5f3a",padding:"4px 0",fontFamily:"sans-serif"}}>{d}</div>
-            ))}
-          </div>
+          <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch",margin:"0 -12px",padding:"0 12px 8px"}}>
+            <div style={{minWidth:760,width:"100%"}}>
+              {/* Day labels */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:3,marginBottom:3}}>
+                {DAYS_BG.map(d=>(
+                  <div key={d} style={{textAlign:"center",fontWeight:"bold",fontSize:11,color:"#2c5f3a",padding:"4px 0",fontFamily:"sans-serif",minWidth:0}}>{d}</div>
+                ))}
+              </div>
 
-          {/* Grid */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
-            {cells.map((day,i)=>{
-              if(!day) return <div key={i}/>;
-              const ds = dateStr(year,month,day);
-              const res = resForDate(ds);
-              const isToday = ds===todayStr;
-              const isSelected = selectedDates.includes(ds);
-              return (
-                <div key={i} onClick={()=>openDay(ds)} style={{
-                  background:isSelected?"#fff7d7":(isToday?"#e8f5ec":"#fff"),
-                  border:isSelected?"2px solid #e8a820":(isToday?"2px solid #2c5f3a":"1px solid #e8e0d4"),
-                  borderRadius:10,minHeight:68,padding:"5px 6px",cursor:"pointer",
-                  boxShadow:isSelected?"0 2px 8px rgba(232,168,32,0.25)":(res.length?"0 2px 6px rgba(44,95,58,0.12)":"none"),
-                  position:"relative"
-                }}>
-                  {isSelected && <div style={{position:"absolute",top:4,right:5,background:"#e8a820",color:"#fff",borderRadius:999,width:17,height:17,fontSize:11,lineHeight:"17px",textAlign:"center",fontFamily:"sans-serif",fontWeight:"bold"}}>✓</div>}
-                  <div style={{fontSize:14,fontWeight:isToday?"bold":"normal",color:isToday?"#2c5f3a":"#2a2118",marginBottom:3}}>{day}</div>
-                  {res.slice(0,2).map(r=>{
-                    const c = statusColors(r.status);
-                    return (
-                      <div key={r.id} style={{background:c.bg,color:"#fff",borderRadius:5,padding:"4px 5px",marginBottom:3,fontFamily:"sans-serif",display:"flex",alignItems:"flex-start",gap:4,minWidth:0,minHeight:33,lineHeight:1.12}}>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:12,fontWeight:"bold",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.name}</div>
-                          {r.phone && <div style={{fontSize:10,opacity:0.95,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:2}}>☎ {r.phone}</div>}
-                        </div>
-                        <button
-                          onClick={(e)=>{e.stopPropagation(); deleteRes(r.id);}}
-                          title="Изтрий"
-                          style={{border:"none",background:"rgba(255,255,255,0.22)",color:"#fff",borderRadius:4,width:16,height:16,lineHeight:"14px",fontSize:11,padding:0,cursor:"pointer",flexShrink:0}}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {res.length>2 && <div style={{fontSize:9,color:"#888",fontFamily:"sans-serif"}}>+{res.length-2}</div>}
-                </div>
-              );
-            })}
+              {/* Grid */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:3}}>
+                {cells.map((day,i)=>{
+                  if(!day) return <div key={i}/>;
+                  const ds = dateStr(year,month,day);
+                  const res = resForDate(ds);
+                  const isToday = ds===todayStr;
+                  const isSelected = selectedDates.includes(ds);
+                  return (
+                    <div key={i} onClick={()=>openDay(ds)} style={{
+                      background:isSelected?"#fff7d7":(isToday?"#e8f5ec":"#fff"),
+                      border:isSelected?"2px solid #e8a820":(isToday?"2px solid #2c5f3a":"1px solid #e8e0d4"),
+                      borderRadius:10,minHeight:68,padding:"5px 6px",cursor:"pointer",
+                      boxShadow:isSelected?"0 2px 8px rgba(232,168,32,0.25)":(res.length?"0 2px 6px rgba(44,95,58,0.12)":"none"),
+                      position:"relative",minWidth:0
+                    }}>
+                      {isSelected && <div style={{position:"absolute",top:4,right:5,background:"#e8a820",color:"#fff",borderRadius:999,width:17,height:17,fontSize:11,lineHeight:"17px",textAlign:"center",fontFamily:"sans-serif",fontWeight:"bold"}}>✓</div>}
+                      <div style={{fontSize:14,fontWeight:isToday?"bold":"normal",color:isToday?"#2c5f3a":"#2a2118",marginBottom:3}}>{day}</div>
+                      {res.slice(0,2).map(r=>{
+                        const c = statusColors(r.status);
+                        return (
+                          <div
+                            key={r.id}
+                            onClick={(e)=>{e.stopPropagation(); openEdit(r);}}
+                            title="Промени всички дни от тази резервация"
+                            style={{background:c.bg,color:"#fff",borderRadius:5,padding:"4px 5px",marginBottom:3,fontFamily:"sans-serif",display:"flex",alignItems:"flex-start",gap:4,minWidth:0,minHeight:33,lineHeight:1.12,cursor:"pointer",boxShadow:`inset 4px 0 0 ${colorFor(reservationSignature(r))}`}}
+                          >
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:12,fontWeight:"bold",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.name}</div>
+                              {r.phone && <div style={{fontSize:10,opacity:0.95,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:2}}>☎ {r.phone}</div>}
+                            </div>
+                            <button
+                              onClick={(e)=>{e.stopPropagation(); deleteRes(r.id);}}
+                              title="Изтрий"
+                              style={{border:"none",background:"rgba(255,255,255,0.22)",color:"#fff",borderRadius:4,width:16,height:16,lineHeight:"14px",fontSize:11,padding:0,cursor:"pointer",flexShrink:0}}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        );
+                      })}
+                      {res.length>2 && <div style={{fontSize:9,color:"#888",fontFamily:"sans-serif"}}>+{res.length-2}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
           <div style={{textAlign:"center",marginTop:12,fontSize:12,color:"#aaa",fontFamily:"sans-serif"}}>
             Изберете няколко дни → добавете една резервация за всички
@@ -463,7 +522,11 @@ export default function App() {
             <div style={{textAlign:"center",padding:50,color:"#bbb",fontSize:16}}>Няма резервации</div>
           ) : (
             [...reservations].sort((a,b)=>a.date.localeCompare(b.date)).map(r=>(
-              <div key={r.id} style={{background:"#fff",borderRadius:12,padding:"12px 14px",marginBottom:8,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",borderLeft:`4px solid ${colorFor(r.name)}`,display:"flex",gap:12,alignItems:"center"}}>
+              <div
+                key={r.id}
+                onClick={()=>openEdit(r)}
+                style={{background:"#fff",borderRadius:12,padding:"12px 14px",marginBottom:8,boxShadow:"0 2px 8px rgba(0,0,0,0.06)",borderLeft:`4px solid ${colorFor(reservationSignature(r))}`,display:"flex",gap:12,alignItems:"center",cursor:"pointer"}}
+              >
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontWeight:"bold",fontSize:16}}>{r.name}</div>
                   {r.phone&&<div style={{fontSize:13,color:"#666",fontFamily:"sans-serif"}}>📞 {r.phone}</div>}
@@ -472,8 +535,8 @@ export default function App() {
                   <div style={{fontSize:11,fontFamily:"sans-serif",display:"inline-block",marginTop:3,background:r.status==="Отменена"?"#fde8e8":"#e8f5ec",color:r.status==="Отменена"?"#c0392b":"#2c5f3a",borderRadius:6,padding:"1px 7px"}}>{r.status}</div>
                 </div>
                 <div style={{display:"flex",gap:5,flexShrink:0}}>
-                  <button onClick={()=>openEdit(r)} style={S.smallBtn("#e8a820")}>✏️</button>
-                  <button onClick={()=>deleteRes(r.id)} style={S.smallBtn("#e8604c")}>🗑</button>
+                  <button onClick={(e)=>{e.stopPropagation(); openEdit(r);}} style={S.smallBtn("#e8a820")}>✏️</button>
+                  <button onClick={(e)=>{e.stopPropagation(); deleteRes(r.id);}} style={S.smallBtn("#e8604c")}>🗑</button>
                 </div>
               </div>
             ))
@@ -488,7 +551,11 @@ export default function App() {
           {dayRes.length===0
             ? <div style={{color:"#aaa",textAlign:"center",padding:"16px 0",fontSize:15}}>Няма резервации за този ден</div>
             : dayRes.map(r=>(
-              <div key={r.id} style={{background:"#f7f9f7",borderLeft:`4px solid ${colorFor(r.name)}`,borderRadius:10,padding:"12px",marginBottom:10}}>
+              <div
+                key={r.id}
+                onClick={()=>openEdit(r)}
+                style={{background:"#f7f9f7",borderLeft:`4px solid ${colorFor(reservationSignature(r))}`,borderRadius:10,padding:"12px",marginBottom:10,cursor:"pointer"}}
+              >
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontWeight:"bold",fontSize:17}}>{r.name}</div>
@@ -497,8 +564,8 @@ export default function App() {
                     <div style={{fontSize:11,fontFamily:"sans-serif",marginTop:6,display:"inline-block",background:r.status==="Отменена"?"#fde8e8":"#e8f5ec",color:r.status==="Отменена"?"#c0392b":"#2c5f3a",borderRadius:6,padding:"1px 7px"}}>{r.status}</div>
                   </div>
                   <div style={{display:"flex",gap:5,flexShrink:0}}>
-                    <button onClick={()=>openEdit(r)} style={S.smallBtn("#e8a820")}>✏️</button>
-                    <button onClick={()=>deleteRes(r.id)} style={S.smallBtn("#e8604c")}>🗑</button>
+                    <button onClick={(e)=>{e.stopPropagation(); openEdit(r);}} style={S.smallBtn("#e8a820")}>✏️</button>
+                    <button onClick={(e)=>{e.stopPropagation(); deleteRes(r.id);}} style={S.smallBtn("#e8604c")}>🗑</button>
                   </div>
                 </div>
               </div>
@@ -514,11 +581,25 @@ export default function App() {
       {(modal==="add"||modal==="edit") && (
         <Modal onClose={closeForm}>
           <h2 style={{margin:"0 0 16px",color:"#1a3d24",fontSize:19}}>
-            {modal==="add"?"➕ Нова резервация":"✏️ Промени резервация"}
+            {modal==="add"
+              ? "➕ Нова резервация"
+              : addDates.length > 1
+                ? `✏️ Промени резервация за ${addDates.length} дати`
+                : "✏️ Промени резервация"}
           </h2>
           {modal==="add"&&(
             <div style={{color:"#2c5f3a",fontWeight:"bold",marginBottom:14,fontSize:15}}>
               📅 {addDates.length>1 ? `${addDates.length} избрани дати` : fmtDate(addDates[0] || selectedDate)}
+              {addDates.length>1 && (
+                <div style={{fontSize:12,color:"#6b7b63",fontWeight:"normal",marginTop:4,lineHeight:1.35}}>
+                  {fmtDateList(addDates)}
+                </div>
+              )}
+            </div>
+          )}
+          {modal==="edit"&&addDates.length>0&&(
+            <div style={{color:"#2c5f3a",fontWeight:"bold",marginBottom:14,fontSize:15}}>
+              📅 {addDates.length>1 ? `${addDates.length} дни от тази резервация` : fmtDate(addDates[0])}
               {addDates.length>1 && (
                 <div style={{fontSize:12,color:"#6b7b63",fontWeight:"normal",marginTop:4,lineHeight:1.35}}>
                   {fmtDateList(addDates)}
@@ -550,7 +631,11 @@ export default function App() {
 
           <div style={{display:"flex",gap:10}}>
             <button onClick={modal==="add"?submitAdd:submitEdit} style={{...S.btn("#2c5f3a","#fff"),flex:1,fontSize:16,padding:"13px"}}>
-              {modal==="add" && addDates.length>1 ? `✅ Запази за ${addDates.length} дати` : "✅ Запази"}
+              {modal==="add" && addDates.length>1
+                ? `✅ Запази за ${addDates.length} дати`
+                : modal==="edit" && addDates.length>1
+                  ? "✅ Запази за всички дни"
+                  : "✅ Запази"}
             </button>
             <button onClick={closeForm} style={{...S.btn("#e0dbd4","#555"),flex:1,fontSize:16,padding:"13px"}}>
               Отказ
