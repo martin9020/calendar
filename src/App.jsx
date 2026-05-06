@@ -1,4 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
+import {
+  deleteReservation as deleteCloudReservation,
+  fetchReservations,
+  insertReservations,
+  isSupabaseConfigured,
+  supabase,
+  updateReservation,
+} from "./supabaseClient";
 
 const MONTHS_BG = ["Януари","Февруари","Март","Април","Май","Юни","Юли","Август","Септември","Октомври","Ноември","Декември"];
 const DAYS_BG = ["Пон","Вт","Ср","Чет","Пет","Съб","Нед"];
@@ -103,10 +111,72 @@ export default function App() {
   const [form, setForm] = useState({name:"",phone:"",notes:"",status:"Потвърдена"});
   const [view, setView] = useState("calendar");
   const [msg, setMsg] = useState("");
+  const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(!isSupabaseConfigured);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [authMsg, setAuthMsg] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  useEffect(()=>{ loadFromStorage().then(setReservations); },[]);
+  const cloudMode = Boolean(isSupabaseConfigured && session);
 
-  const save = useCallback((data)=>{ setReservations(data); saveToStorage(data); },[]);
+  const showMessage = useCallback((text) => {
+    setMsg(text);
+    setTimeout(()=>setMsg(""),3000);
+  },[]);
+
+  const saveLocal = useCallback((data)=>{ setReservations(data); saveToStorage(data); },[]);
+
+  const refreshCloud = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    try {
+      setBusy(true);
+      setReservations(await fetchReservations());
+    } catch (error) {
+      setAuthMsg(error.message || "Грешка при зареждане от Supabase.");
+    } finally {
+      setBusy(false);
+    }
+  },[]);
+
+  useEffect(()=>{
+    if (!isSupabaseConfigured) {
+      loadFromStorage().then(setReservations);
+      return;
+    }
+
+    let active = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      setSession(data.session);
+      setAuthReady(true);
+      if (data.session) refreshCloud();
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setAuthReady(true);
+      if (nextSession) refreshCloud();
+      else setReservations([]);
+    });
+
+    return () => {
+      active = false;
+      data.subscription.unsubscribe();
+    };
+  },[refreshCloud]);
+
+  useEffect(()=>{
+    if (!cloudMode) return;
+    const channel = supabase
+      .channel("reservations-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "reservations" }, refreshCloud)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  },[cloudMode, refreshCloud]);
 
   const resForDate = (ds) => reservations.filter(r=>r.date===ds);
   const todayStr = dateStr(today.getFullYear(), today.getMonth(), today.getDate());
@@ -157,28 +227,60 @@ export default function App() {
     setModal(addDates.length===1 && selectedDate && !multiSelect ? "day" : null);
   };
 
-  const submitAdd = () => {
+  const submitAdd = async () => {
     if(!form.name.trim() || !addDates.length) return;
     const baseId = Date.now();
     const created = addDates.map((date, index)=>({id:baseId+index,date,...form}));
-    save([...reservations,...created]);
+    try {
+      setBusy(true);
+      if (cloudMode) {
+        const saved = await insertReservations(created);
+        setReservations(data=>[...data,...saved]);
+      } else {
+        saveLocal([...reservations,...created]);
+      }
+    } catch (error) {
+      showMessage(`❌ ${error.message || "Грешка при запис."}`);
+      return;
+    } finally {
+      setBusy(false);
+    }
     if (created.length > 1) {
       setSelectedDates([]);
-      setMultiSelect(false);
-      setMsg(`✅ Добавени ${created.length} резервации!`);
-      setTimeout(()=>setMsg(""),3000);
+      showMessage(`✅ Добавени ${created.length} резервации!`);
       setModal(null);
       return;
     }
     setModal("day");
   };
-  const submitEdit = () => {
+  const submitEdit = async () => {
     if(!form.name.trim()) return;
-    save(reservations.map(r=>r.id===editId?{...r,...form}:r));
-    setModal("day");
+    try {
+      setBusy(true);
+      if (cloudMode) {
+        const saved = await updateReservation(editId, form);
+        setReservations(data=>data.map(r=>r.id===editId?saved:r));
+      } else {
+        saveLocal(reservations.map(r=>r.id===editId?{...r,...form}:r));
+      }
+      setModal("day");
+    } catch (error) {
+      showMessage(`❌ ${error.message || "Грешка при промяна."}`);
+    } finally {
+      setBusy(false);
+    }
   };
-  const deleteRes = (id) => {
-    save(reservations.filter(r=>r.id!==id));
+  const deleteRes = async (id) => {
+    try {
+      setBusy(true);
+      if (cloudMode) await deleteCloudReservation(id);
+      const next = reservations.filter(r=>r.id!==id);
+      cloudMode ? setReservations(next) : saveLocal(next);
+    } catch (error) {
+      showMessage(`❌ ${error.message || "Грешка при изтриване."}`);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleImport = (e) => {
@@ -187,10 +289,52 @@ export default function App() {
     reader.onload = (ev) => {
       const imported = parseCSV(ev.target.result);
       if(!imported.length){setMsg("❌ Файлът е празен или грешен формат.");setTimeout(()=>setMsg(""),3000);return;}
-      save([...reservations,...imported]);
-      setMsg(`✅ Внесени ${imported.length} резервации!`); setTimeout(()=>setMsg(""),3000);
+      try {
+        if (cloudMode) {
+          insertReservations(imported).then(saved=>{
+            setReservations(data=>[...data,...saved]);
+            showMessage(`✅ Внесени ${saved.length} резервации!`);
+          }).catch(error=>showMessage(`❌ ${error.message || "Грешка при внос."}`));
+        } else {
+          saveLocal([...reservations,...imported]);
+          showMessage(`✅ Внесени ${imported.length} резервации!`);
+        }
+      } catch (error) {
+        showMessage(`❌ ${error.message || "Грешка при внос."}`);
+      }
     };
     reader.readAsText(file,"UTF-8"); e.target.value="";
+  };
+
+  const signIn = async () => {
+    if (!email.trim() || !password) return;
+    setBusy(true);
+    setAuthMsg("");
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    setBusy(false);
+    if (error) setAuthMsg(error.message);
+  };
+
+  const signUp = async () => {
+    if (!email.trim() || !password) return;
+    setBusy(true);
+    setAuthMsg("");
+    const { error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+    });
+    setBusy(false);
+    if (error) setAuthMsg(error.message);
+    else setAuthMsg("Проверете имейла си, ако Supabase поиска потвърждение.");
+  };
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+    setReservations([]);
   };
 
   const daysInMonth = getDaysInMonth(year,month);
@@ -206,6 +350,38 @@ export default function App() {
     smallBtn: (bg)=>({background:bg,color:"#fff",border:"none",borderRadius:8,width:36,height:36,fontSize:15,cursor:"pointer",flexShrink:0}),
   };
 
+  if (isSupabaseConfigured && !authReady) {
+    return (
+      <div style={{minHeight:"100vh",display:"grid",placeItems:"center",background:"#faf7f2",fontFamily:"Georgia, serif",color:"#2a2118"}}>
+        <div style={{fontSize:18,fontWeight:"bold",color:"#1a3d24"}}>Зареждане...</div>
+      </div>
+    );
+  }
+
+  if (isSupabaseConfigured && !session) {
+    return (
+      <div style={{minHeight:"100vh",background:"#faf7f2",fontFamily:"Georgia, serif",color:"#2a2118",display:"grid",placeItems:"center",padding:18}}>
+        <div style={{background:"#fff",borderRadius:18,padding:22,width:"100%",maxWidth:420,boxShadow:"0 10px 35px rgba(0,0,0,0.1)"}}>
+          <div style={{fontSize:24,fontWeight:"bold",color:"#1a3d24",marginBottom:6}}>📅 Резервации</div>
+          <div style={{fontSize:13,color:"#6b7b63",fontFamily:"sans-serif",marginBottom:18}}>Влезте, за да виждате общите резервации на всички устройства.</div>
+          <div style={{marginBottom:12}}>
+            <label style={{display:"block",fontWeight:"bold",marginBottom:5,fontSize:14}}>Имейл</label>
+            <input value={email} onChange={e=>setEmail(e.target.value)} type="email" autoComplete="email" style={S.input}/>
+          </div>
+          <div style={{marginBottom:16}}>
+            <label style={{display:"block",fontWeight:"bold",marginBottom:5,fontSize:14}}>Парола</label>
+            <input value={password} onChange={e=>setPassword(e.target.value)} type="password" autoComplete="current-password" style={S.input}/>
+          </div>
+          {authMsg && <div style={{background:"#fff7d7",color:"#6b4a2f",borderRadius:10,padding:"9px 10px",fontSize:13,fontFamily:"sans-serif",marginBottom:12}}>{authMsg}</div>}
+          <div style={{display:"flex",gap:10}}>
+            <button disabled={busy} onClick={signIn} style={{...S.btn(busy?"#9aae9c":"#2c5f3a","#fff"),flex:1,fontSize:16,padding:"13px"}}>Вход</button>
+            <button disabled={busy} onClick={signUp} style={{...S.btn("#e8a820","#fff"),flex:1,fontSize:16,padding:"13px"}}>Регистрация</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{minHeight:"100vh",background:"#faf7f2",fontFamily:"Georgia, serif",color:"#2a2118"}}>
 
@@ -215,6 +391,9 @@ export default function App() {
           <div>
             <div style={{fontSize:24,fontWeight:"bold"}}>📅 Резервации</div>
             <div style={{fontSize:12,opacity:0.7}}>Общо: {reservations.length} резервации</div>
+            <div style={{fontSize:11,opacity:0.7,fontFamily:"sans-serif"}}>
+              {cloudMode ? `☁️ Обща база: ${session.user.email}` : "💾 Локално съхранение"}
+            </div>
           </div>
           <button onClick={()=>setView(v=>v==="calendar"?"list":"calendar")} style={S.btn("#ffffff22","#fff")}>
             {view==="calendar"?"📋 Списък":"📅 Календар"}
@@ -226,6 +405,8 @@ export default function App() {
             ⬆️ Внеси CSV
             <input type="file" accept=".csv" onChange={handleImport} style={{display:"none"}}/>
           </label>
+          {cloudMode && <button onClick={refreshCloud} disabled={busy} style={S.btn("#ffffff22","#fff")}>↻ Обнови</button>}
+          {cloudMode && <button onClick={signOut} style={S.btn("#ffffff22","#fff")}>Изход</button>}
         </div>
       </div>
 
