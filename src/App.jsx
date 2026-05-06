@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   deleteReservation as deleteCloudReservation,
   deleteReservations as deleteCloudReservations,
@@ -52,6 +52,17 @@ function sortDateStrings(dates) {
   return [...dates].sort((a,b)=>a.localeCompare(b));
 }
 
+function dateFromOrdinal(ordinal) {
+  const dt = new Date(ordinal * 86400000);
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth()+1).padStart(2,"0")}-${String(dt.getUTCDate()).padStart(2,"0")}`;
+}
+
+function dateRangeStrings(startDate, endDate) {
+  const start = Math.min(dateOrdinal(startDate), dateOrdinal(endDate));
+  const end = Math.max(dateOrdinal(startDate), dateOrdinal(endDate));
+  return Array.from({ length: end - start + 1 }, (_, index) => dateFromOrdinal(start + index));
+}
+
 function fmtDateList(dates) {
   const sorted = sortDateStrings(dates);
   if (sorted.length <= 3) return sorted.map(fmtDate).join(", ");
@@ -91,6 +102,12 @@ function reservationSignature(reservation) {
   ].join("|");
 }
 
+function reservationGroupKey(reservation) {
+  return reservation.createdAt
+    ? `created:${reservation.createdAt}`
+    : `signature:${reservationSignature(reservation)}`;
+}
+
 function dateOrdinal(ds) {
   const { y, m, d } = parseDate(ds);
   return Date.UTC(y, m, d) / 86400000;
@@ -98,9 +115,9 @@ function dateOrdinal(ds) {
 
 function getReservationBatch(target, reservations) {
   if (!target) return [];
-  const signature = reservationSignature(target);
+  const groupKey = reservationGroupKey(target);
   const matches = reservations
-    .filter(r => reservationSignature(r) === signature)
+    .filter(r => reservationGroupKey(r) === groupKey)
     .sort((a, b) => a.date.localeCompare(b.date) || String(a.id).localeCompare(String(b.id)));
   const targetIndex = matches.findIndex(r => r.id === target.id);
 
@@ -170,6 +187,9 @@ export default function App() {
   const [view, setView] = useState("calendar");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const calendarScrollRef = useRef(null);
+  const selectionDragRef = useRef(null);
+  const lastSelectionAnchorRef = useRef(null);
 
   const cloudMode = isSupabaseConfigured;
 
@@ -216,8 +236,14 @@ export default function App() {
   const resForDate = (ds) => reservations.filter(r=>r.date===ds);
   const todayStr = dateStr(today.getFullYear(), today.getMonth(), today.getDate());
 
-  const prevMonth = () => { if(month===0){setMonth(11);setYear(y=>y-1);}else setMonth(m=>m-1); };
-  const nextMonth = () => { if(month===11){setMonth(0);setYear(y=>y+1);}else setMonth(m=>m+1); };
+  const prevMonth = () => {
+    lastSelectionAnchorRef.current = null;
+    if(month===0){setMonth(11);setYear(y=>y-1);}else setMonth(m=>m-1);
+  };
+  const nextMonth = () => {
+    lastSelectionAnchorRef.current = null;
+    if(month===11){setMonth(0);setYear(y=>y+1);}else setMonth(m=>m+1);
+  };
 
   const toggleSelectedDate = (ds) => {
     setSelectedDates(dates => dates.includes(ds)
@@ -225,8 +251,77 @@ export default function App() {
       : sortDateStrings([...dates, ds])
     );
   };
-  const openDay = (ds) => {
-    toggleSelectedDate(ds);
+
+  const applyDateSelection = (dates, mode) => {
+    setSelectedDates(current => {
+      const next = new Set(current);
+      dates.forEach(ds => {
+        if (mode === "remove") next.delete(ds);
+        else next.add(ds);
+      });
+      return sortDateStrings([...next]);
+    });
+  };
+
+  const selectDateFromInput = (ds, shiftKey = false) => {
+    if (shiftKey && lastSelectionAnchorRef.current) {
+      applyDateSelection(dateRangeStrings(lastSelectionAnchorRef.current, ds), "add");
+    } else {
+      toggleSelectedDate(ds);
+    }
+    lastSelectionAnchorRef.current = ds;
+  };
+
+  const beginDatePointerSelection = (event, ds) => {
+    if (event.button !== undefined && event.button !== 0) return;
+    event.preventDefault();
+
+    if (event.shiftKey && lastSelectionAnchorRef.current) {
+      selectDateFromInput(ds, true);
+      selectionDragRef.current = null;
+      return;
+    }
+
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    const mode = selectedDates.includes(ds) ? "remove" : "add";
+    selectionDragRef.current = { pointerId: event.pointerId, mode, lastDate: ds };
+    applyDateSelection([ds], mode);
+    lastSelectionAnchorRef.current = ds;
+  };
+
+  const continueDatePointerSelection = (event) => {
+    const drag = selectionDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+
+    const scrollEl = calendarScrollRef.current;
+    if (scrollEl) {
+      const rect = scrollEl.getBoundingClientRect();
+      if (event.clientX > rect.right - 44) scrollEl.scrollLeft += 14;
+      if (event.clientX < rect.left + 44) scrollEl.scrollLeft -= 14;
+    }
+
+    const element = document.elementFromPoint(event.clientX, event.clientY);
+    const dateEl = element?.closest?.("[data-date]");
+    const ds = dateEl?.dataset?.date;
+    if (!ds || ds === drag.lastDate) return;
+
+    applyDateSelection(dateRangeStrings(drag.lastDate, ds), drag.mode);
+    drag.lastDate = ds;
+    lastSelectionAnchorRef.current = ds;
+  };
+
+  const endDatePointerSelection = (event) => {
+    const drag = selectionDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    selectionDragRef.current = null;
+  };
+
+  const handleDateKeyDown = (event, ds) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    selectDateFromInput(ds, event.shiftKey);
   };
   const openAdd = (ds) => {
     const dates = sortDateStrings(ds ? [ds] : (selectedDates.length ? selectedDates : [selectedDate || todayStr]));
@@ -253,7 +348,8 @@ export default function App() {
   const submitAdd = async () => {
     if(!form.name.trim() || !addDates.length) return;
     const baseId = Date.now();
-    const created = addDates.map((date, index)=>({id:baseId+index,date,...form}));
+    const createdAt = new Date().toISOString();
+    const created = addDates.map((date, index)=>({id:baseId+index,date,createdAt,...form}));
     try {
       setBusy(true);
       if (cloudMode) {
@@ -435,7 +531,7 @@ export default function App() {
             <div style={{marginTop:8,fontSize:12,color:selectedDates.length?"#2c5f3a":"#9c8b78",fontFamily:"sans-serif",lineHeight:1.4}}>
               {selectedDates.length
                 ? `Избрани: ${fmtDateList(selectedDates)}`
-                : "Натиснете няколко дни в календара, после запазете резервация за всички избрани дати."}
+                : "Натиснете и плъзнете през дни, или Shift + click на компютър за избор на диапазон."}
             </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
               {["Потвърдена","Чакаща","Отменена"].map(status=>{
@@ -450,7 +546,7 @@ export default function App() {
             </div>
           </div>
 
-          <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch",margin:"0 -12px",padding:"0 12px 8px"}}>
+          <div ref={calendarScrollRef} style={{overflowX:"auto",WebkitOverflowScrolling:"touch",margin:"0 -12px",padding:"0 12px 8px"}}>
             <div style={{minWidth:760,width:"100%"}}>
               {/* Day labels */}
               <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(0,1fr))",gap:3,marginBottom:3}}>
@@ -468,12 +564,22 @@ export default function App() {
                   const isToday = ds===todayStr;
                   const isSelected = selectedDates.includes(ds);
                   return (
-                    <div key={i} onClick={()=>openDay(ds)} style={{
+                    <div
+                      key={i}
+                      data-date={ds}
+                      role="button"
+                      tabIndex={0}
+                      onPointerDown={(event)=>beginDatePointerSelection(event, ds)}
+                      onPointerMove={continueDatePointerSelection}
+                      onPointerUp={endDatePointerSelection}
+                      onPointerCancel={endDatePointerSelection}
+                      onKeyDown={(event)=>handleDateKeyDown(event, ds)}
+                      style={{
                       background:isSelected?"#fff7d7":(isToday?"#e8f5ec":"#fff"),
                       border:isSelected?"2px solid #e8a820":(isToday?"2px solid #2c5f3a":"1px solid #e8e0d4"),
                       borderRadius:10,minHeight:68,padding:"5px 6px",cursor:"pointer",
                       boxShadow:isSelected?"0 2px 8px rgba(232,168,32,0.25)":(res.length?"0 2px 6px rgba(44,95,58,0.12)":"none"),
-                      position:"relative",minWidth:0
+                      position:"relative",minWidth:0,userSelect:"none",touchAction:"none",outline:"none"
                     }}>
                       {isSelected && <div style={{position:"absolute",top:4,right:5,background:"#e8a820",color:"#fff",borderRadius:999,width:17,height:17,fontSize:11,lineHeight:"17px",textAlign:"center",fontFamily:"sans-serif",fontWeight:"bold"}}>✓</div>}
                       <div style={{fontSize:14,fontWeight:isToday?"bold":"normal",color:isToday?"#2c5f3a":"#2a2118",marginBottom:3}}>{day}</div>
@@ -482,6 +588,8 @@ export default function App() {
                         return (
                           <div
                             key={r.id}
+                            data-reservation-action="edit"
+                            onPointerDown={(e)=>e.stopPropagation()}
                             onClick={(e)=>{e.stopPropagation(); openEdit(r);}}
                             title="Промени всички дни от тази резервация"
                             style={{background:c.bg,color:"#fff",borderRadius:5,padding:"4px 5px",marginBottom:3,fontFamily:"sans-serif",display:"flex",alignItems:"flex-start",gap:4,minWidth:0,minHeight:33,lineHeight:1.12,cursor:"pointer",boxShadow:`inset 4px 0 0 ${colorFor(reservationSignature(r))}`}}
@@ -491,6 +599,8 @@ export default function App() {
                               {r.phone && <div style={{fontSize:10,opacity:0.95,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",marginTop:2}}>☎ {r.phone}</div>}
                             </div>
                             <button
+                              data-reservation-action="delete"
+                              onPointerDown={(e)=>e.stopPropagation()}
                               onClick={(e)=>{e.stopPropagation(); deleteRes(r.id);}}
                               title="Изтрий"
                               style={{border:"none",background:"rgba(255,255,255,0.22)",color:"#fff",borderRadius:4,width:16,height:16,lineHeight:"14px",fontSize:11,padding:0,cursor:"pointer",flexShrink:0}}
@@ -508,7 +618,7 @@ export default function App() {
             </div>
           </div>
           <div style={{textAlign:"center",marginTop:12,fontSize:12,color:"#aaa",fontFamily:"sans-serif"}}>
-            Изберете няколко дни → добавете една резервация за всички
+            Плъзнете през дни или използвайте Shift + click → добавете една резервация за всички
           </div>
         </div>
       ) : (

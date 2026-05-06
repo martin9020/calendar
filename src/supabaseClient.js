@@ -17,6 +17,7 @@ function fromRow(row) {
     phone: row.phone || "",
     notes: row.notes || "",
     status: row.status || "Потвърдена",
+    createdAt: row.created_at || "",
   };
 }
 
@@ -33,7 +34,7 @@ function toInsert(reservation) {
 export async function fetchReservations() {
   const { data, error } = await supabase
     .from("reservations")
-    .select("id,date,name,phone,notes,status")
+    .select("id,date,name,phone,notes,status,created_at")
     .order("date", { ascending: true })
     .order("created_at", { ascending: true });
 
@@ -45,7 +46,7 @@ export async function insertReservations(reservations) {
   const { data, error } = await supabase
     .from("reservations")
     .insert(reservations.map(toInsert))
-    .select("id,date,name,phone,notes,status");
+    .select("id,date,name,phone,notes,status,created_at");
 
   if (error) throw error;
   return (data || []).map(fromRow);
@@ -62,7 +63,7 @@ export async function updateReservation(id, form) {
       updated_at: new Date().toISOString(),
     })
     .eq("id", id)
-    .select("id,date,name,phone,notes,status")
+    .select("id,date,name,phone,notes,status,created_at")
     .single();
 
   if (error) throw error;
@@ -82,7 +83,7 @@ export async function updateReservations(ids, form) {
       updated_at: new Date().toISOString(),
     })
     .in("id", ids)
-    .select("id,date,name,phone,notes,status");
+    .select("id,date,name,phone,notes,status,created_at");
 
   if (error) throw error;
   return (data || []).map(fromRow);
