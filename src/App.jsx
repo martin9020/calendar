@@ -95,7 +95,7 @@ export default function App() {
   const [month, setMonth] = useState(today.getMonth());
   const [reservations, setReservations] = useState([]);
   const [selectedDate, setSelectedDate] = useState(null);
-  const [multiSelect, setMultiSelect] = useState(false);
+  const [multiSelect, setMultiSelect] = useState(true);
   const [selectedDates, setSelectedDates] = useState([]);
   const [addDates, setAddDates] = useState([]);
   const [modal, setModal] = useState(null);
