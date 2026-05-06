@@ -416,35 +416,6 @@ export default function App() {
             </div>
           </div>
 
-          {multiSelect && selectedDates.length > 0 && (
-            <div style={{background:"#fff",borderRadius:14,padding:"12px",marginBottom:12,boxShadow:"0 2px 10px rgba(0,0,0,0.06)"}}>
-              <div style={{fontWeight:"bold",color:"#1a3d24",fontSize:15,marginBottom:8}}>Резервации за избраните дати</div>
-              {selectedDates.map(ds=>{
-                const dayReservations = resForDate(ds);
-                return (
-                  <div key={ds} style={{borderTop:"1px solid #eee4d8",paddingTop:8,marginTop:8}}>
-                    <div style={{fontSize:13,fontWeight:"bold",color:"#2c5f3a",marginBottom:6,fontFamily:"sans-serif"}}>{fmtDate(ds)}</div>
-                    {dayReservations.length===0 ? (
-                      <div style={{fontSize:12,color:"#aaa",fontFamily:"sans-serif",marginBottom:5}}>Няма резервации</div>
-                    ) : dayReservations.map(r=>{
-                      const c = statusColors(r.status);
-                      return (
-                        <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,background:c.soft,borderLeft:`4px solid ${c.border}`,borderRadius:9,padding:"8px 9px",marginBottom:6}}>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontWeight:"bold",fontSize:14,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.name}</div>
-                            <div style={{fontSize:11,color:c.text,fontFamily:"sans-serif",fontWeight:"bold"}}>{r.status || "Потвърдена"}</div>
-                          </div>
-                          <button onClick={()=>openEdit(r)} style={S.smallBtn("#e8a820")}>✏️</button>
-                          <button onClick={()=>deleteRes(r.id)} style={S.smallBtn("#e8604c")}>🗑</button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
           {/* Day labels */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,marginBottom:3}}>
             {DAYS_BG.map(d=>(
