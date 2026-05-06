@@ -1,6 +1,6 @@
 ﻿Add-Type -AssemblyName System.Drawing
 
-$outPath = Join-Path (Split-Path -Parent $PSScriptRoot) "public\og-calendar.png"
+$outPath = Join-Path (Split-Path -Parent $PSScriptRoot) "public\og-beach-calendar.png"
 $width = 1200
 $height = 630
 
@@ -9,12 +9,17 @@ $g = [System.Drawing.Graphics]::FromImage($bmp)
 $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
 $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
 
-function Brush($hex) {
-  return New-Object System.Drawing.SolidBrush ([System.Drawing.ColorTranslator]::FromHtml($hex))
+function Color($hex, [int]$alpha = 255) {
+  $color = [System.Drawing.ColorTranslator]::FromHtml($hex)
+  return [System.Drawing.Color]::FromArgb($alpha, $color)
 }
 
-function Pen($hex, $size = 1) {
-  return New-Object System.Drawing.Pen ([System.Drawing.ColorTranslator]::FromHtml($hex)), $size
+function Brush($hex, [int]$alpha = 255) {
+  return [System.Drawing.SolidBrush]::new((Color $hex $alpha))
+}
+
+function Pen($hex, [int]$size = 1, [int]$alpha = 255) {
+  return [System.Drawing.Pen]::new((Color $hex $alpha), $size)
 }
 
 function RoundRectPath($x, $y, $w, $h, $r) {
@@ -40,96 +45,156 @@ function StrokeRoundRect($x, $y, $w, $h, $r, $pen) {
   $path.Dispose()
 }
 
-$bg = Brush "#f6f2ec"
+function DrawCentered($textValue, $font, $brush, $x, $y, $w) {
+  $size = $g.MeasureString($textValue, $font)
+  $g.DrawString($textValue, $font, $brush, $x + (($w - $size.Width) / 2), $y)
+}
+
+$canvas = [System.Drawing.Rectangle]::new(0, 0, $width, $height)
+$background = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
+  $canvas,
+  (Color "#86d8f1"),
+  (Color "#f5cf86"),
+  [System.Drawing.Drawing2D.LinearGradientMode]::Vertical
+)
+$blend = [System.Drawing.Drawing2D.ColorBlend]::new()
+$blend.Positions = [single[]]@(0.0, 0.34, 0.35, 0.63, 0.64, 1.0)
+$blend.Colors = [System.Drawing.Color[]]@(
+  (Color "#8adcf5"),
+  (Color "#d7f4ff"),
+  (Color "#2bb7c8"),
+  (Color "#178f9f"),
+  (Color "#f3d18a"),
+  (Color "#e9b56f")
+)
+$background.InterpolationColors = $blend
+$g.FillRectangle($background, $canvas)
+
 $green = Brush "#1f5634"
-$green2 = Brush "#2f7046"
 $white = Brush "#ffffff"
-$cream = Brush "#fbfaf7"
-$muted = Brush "#dfe8df"
 $text = Brush "#14321f"
-$subtle = Brush "#62705f"
+$muted = Brush "#59705f"
 $red = Brush "#e8604c"
 $yellow = Brush "#e8a820"
 $gray = Brush "#6b7280"
 
-$g.FillRectangle($bg, 0, 0, $width, $height)
+$titleFont = [System.Drawing.Font]::new("Segoe UI", 52, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
+$subtitleFont = [System.Drawing.Font]::new("Segoe UI", 25, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Pixel)
+$smallFont = [System.Drawing.Font]::new("Segoe UI", 19, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Pixel)
+$smallBoldFont = [System.Drawing.Font]::new("Segoe UI", 19, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
+$monthFont = [System.Drawing.Font]::new("Segoe UI", 31, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
+$dayFont = [System.Drawing.Font]::new("Segoe UI", 15, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
+$dateFont = [System.Drawing.Font]::new("Segoe UI", 16, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
+$chipFont = [System.Drawing.Font]::new("Segoe UI", 11, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
+$microFont = [System.Drawing.Font]::new("Segoe UI", 9, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Pixel)
 
-FillRoundRect 42 42 1116 546 34 $white
-FillRoundRect 42 42 1116 150 34 $green
-$g.FillRectangle($green, 42, 126, 1116, 66)
+$g.FillEllipse((Brush "#ffe49b" 235), 94, 62, 118, 118)
+$g.FillEllipse((Brush "#fff4c7" 115), 69, 37, 168, 168)
 
-$titleFont = New-Object System.Drawing.Font "Segoe UI", 42, ([System.Drawing.FontStyle]::Bold)
-$subtitleFont = New-Object System.Drawing.Font "Segoe UI", 21, ([System.Drawing.FontStyle]::Regular)
-$smallFont = New-Object System.Drawing.Font "Segoe UI", 18, ([System.Drawing.FontStyle]::Regular)
-$monthFont = New-Object System.Drawing.Font "Segoe UI", 28, ([System.Drawing.FontStyle]::Bold)
-$dayFont = New-Object System.Drawing.Font "Segoe UI", 16, ([System.Drawing.FontStyle]::Bold)
-$chipFont = New-Object System.Drawing.Font "Segoe UI", 14, ([System.Drawing.FontStyle]::Bold)
-
-FillRoundRect 88 82 46 46 8 (Brush "#b8d7ff")
-$g.FillRectangle((Brush "#7a5ee8"), 88, 82, 46, 14)
-FillRoundRect 96 100 8 8 2 (Brush "#ffffff")
-FillRoundRect 111 100 8 8 2 (Brush "#ffffff")
-FillRoundRect 96 113 8 8 2 (Brush "#ffffff")
-FillRoundRect 111 113 8 8 2 (Brush "#ffffff")
-$g.DrawString("Резервации", $titleFont, $white, 150, 64)
-$g.DrawString("Споделен календар за резервации", $subtitleFont, $white, 94, 124)
-$g.DrawString("избор на няколко дати • обща база • CSV импорт/експорт", $smallFont, (Brush "#cfe0d3"), 94, 156)
-
-FillRoundRect 860 76 230 56 14 $green2
-$g.DrawString("Отворен достъп", $smallFont, $white, 884, 91)
-
-FillRoundRect 82 222 1036 306 18 $cream
-StrokeRoundRect 82 222 1036 306 18 (New-Object System.Drawing.Pen ([System.Drawing.ColorTranslator]::FromHtml("#eadfce"), 2))
-
-$g.DrawString("Май 2026", $monthFont, $text, 530, 244)
-
-$days = @("Пон","Вт","Ср","Чет","Пет","Съб","Нед")
-$gridX = 122
-$gridY = 308
-$cellW = 136
-$cellH = 72
-for ($i = 0; $i -lt 7; $i++) {
-  $g.DrawString($days[$i], $dayFont, $green, $gridX + $i*$cellW + 46, 282)
+for ($y = 276; $y -le 390; $y += 38) {
+  $wavePen = Pen "#ffffff" 4 125
+  for ($x = -80; $x -lt ($width + 80); $x += 132) {
+    $g.DrawArc($wavePen, $x, $y, 124, 34, 0, 180)
+  }
+  $wavePen.Dispose()
 }
 
-for ($row = 0; $row -lt 3; $row++) {
-  for ($col = 0; $col -lt 7; $col++) {
-    $x = $gridX + $col*$cellW
-    $y = $gridY + $row*$cellH
-    FillRoundRect $x $y 124 60 10 $white
-    StrokeRoundRect $x $y 124 60 10 (New-Object System.Drawing.Pen ([System.Drawing.ColorTranslator]::FromHtml("#eadfce"), 1))
+$shorePen = Pen "#ffffff" 14 170
+$g.DrawBezier($shorePen, -40, 412, 230, 382, 470, 454, 760, 418)
+$g.DrawBezier($shorePen, 690, 420, 830, 402, 1000, 446, 1240, 412)
+$shorePen.Dispose()
+
+$sandShade = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
+  [System.Drawing.Rectangle]::new(0, 430, $width, 200),
+  (Color "#f6dca5" 120),
+  (Color "#c98753" 130),
+  [System.Drawing.Drawing2D.LinearGradientMode]::Vertical
+)
+$g.FillRectangle($sandShade, 0, 430, $width, 200)
+
+$umbrellaPole = Pen "#8b5e3c" 8 220
+$g.DrawLine($umbrellaPole, 214, 408, 254, 570)
+$umbrellaPole.Dispose()
+$g.FillPie((Brush "#f25f5c" 235), 112, 352, 220, 122, 198, 144)
+$g.FillPie((Brush "#f6bd2f" 230), 158, 352, 128, 122, 208, 124)
+$g.FillPie((Brush "#2ec4b6" 225), 204, 352, 128, 122, 212, 126)
+
+FillRoundRect 56 54 420 224 30 (Brush "#082418" 165)
+FillRoundRect 88 86 58 58 10 (Brush "#b8d7ff")
+$g.FillRectangle((Brush "#7a5ee8"), 88, 86, 58, 17)
+for ($iconRow = 0; $iconRow -lt 2; $iconRow++) {
+  for ($iconCol = 0; $iconCol -lt 3; $iconCol++) {
+    FillRoundRect (99 + $iconCol * 14) (112 + $iconRow * 15) 8 8 2 (Brush "#ffffff")
+  }
+}
+$g.DrawString("Резервации", $titleFont, $white, 164, 78)
+$g.DrawString("Споделен календар за резервации", $subtitleFont, $white, 88, 154)
+$g.DrawString("избор на няколко дати  •  обща база", $smallFont, (Brush "#d8ecdf"), 88, 190)
+FillRoundRect 88 226 162 34 11 (Brush "#e8604c")
+$g.DrawString("Потвърдена", $smallBoldFont, $white, 112, 232)
+FillRoundRect 266 226 132 34 11 (Brush "#e8a820")
+$g.DrawString("Чакаща", $smallBoldFont, $white, 293, 232)
+
+FillRoundRect 552 88 592 466 30 (Brush "#092116" 55)
+FillRoundRect 530 66 592 466 30 (Brush "#ffffff" 242)
+FillRoundRect 530 66 592 94 30 (Brush "#1f5634" 246)
+$g.FillRectangle((Brush "#1f5634" 246), 530, 112, 592, 48)
+$g.DrawString("Май 2026", $monthFont, $white, 748, 96)
+
+$days = @("Пон", "Вт", "Ср", "Чет", "Пет", "Съб", "Нед")
+$gridX = 584
+$labelY = 178
+$gridY = 206
+$cellW = 70
+$cellH = 52
+for ($i = 0; $i -lt 7; $i++) {
+  DrawCentered $days[$i] $dayFont $green ($gridX + $i * $cellW) $labelY 64
+}
+
+$reservations = @{}
+$reservations[7] = @{ name = "Иван"; phone = "088 123 4567" }
+$reservations[8] = @{ name = "Мария"; phone = "089 555 0011" }
+$reservations[9] = @{ name = "Георги"; phone = "087 777 1212" }
+$offset = 4
+
+for ($day = 1; $day -le 31; $day++) {
+  $index = $day + $offset - 1
+  $row = [math]::Floor($index / 7)
+  $col = $index % 7
+  $x = $gridX + $col * $cellW
+  $y = $gridY + $row * $cellH
+  $isReservation = $reservations.ContainsKey($day)
+
+  if ($isReservation) {
+    FillRoundRect $x $y 64 46 9 (Brush "#ffe8e4")
+    StrokeRoundRect $x $y 64 46 9 (Pen "#e8604c" 3)
+  } else {
+    FillRoundRect $x $y 64 46 9 (Brush "#ffffff")
+    StrokeRoundRect $x $y 64 46 9 (Pen "#e5d8c5" 1)
+  }
+
+  $g.DrawString([string]$day, $dateFont, $text, $x + 7, $y + 4)
+
+  if ($isReservation) {
+    $info = $reservations[$day]
+    FillRoundRect ($x + 6) ($y + 20) 52 20 5 $red
+    $g.DrawString($info.name, $chipFont, $white, $x + 10, $y + 20)
+    $g.DrawString($info.phone, $microFont, $white, $x + 10, $y + 34)
   }
 }
 
-$reservationDays = @(
-  @{ day="7"; col=3; row=1; name="Иван"; phone="088 123 4567"; color=$red },
-  @{ day="8"; col=4; row=1; name="Мария"; phone="089 555 0011"; color=$red },
-  @{ day="9"; col=5; row=1; name="Георги"; phone="087 777 1212"; color=$red }
-)
+FillRoundRect 586 488 132 30 9 $red
+$g.DrawString("Потвърдена", $dayFont, $white, 608, 494)
+FillRoundRect 736 488 104 30 9 $yellow
+$g.DrawString("Чакаща", $dayFont, $white, 759, 494)
+FillRoundRect 858 488 116 30 9 $gray
+$g.DrawString("Отменена", $dayFont, $white, 879, 494)
 
-foreach ($item in $reservationDays) {
-  $x = $gridX + [int]$item.col*$cellW
-  $y = $gridY + [int]$item.row*$cellH
-  FillRoundRect $x $y 124 60 10 (Brush "#fff7d7")
-  StrokeRoundRect $x $y 124 60 10 (New-Object System.Drawing.Pen ([System.Drawing.ColorTranslator]::FromHtml("#e8a820"), 3))
-  $g.DrawString($item.day, $smallFont, $text, $x + 8, $y + 4)
-  FillRoundRect ($x + 8) ($y + 26) 108 26 6 $item.color
-  $g.DrawString($item.name, $chipFont, $white, $x + 13, $y + 28)
-}
-
-FillRoundRect 128 466 190 38 10 $red
-$g.DrawString("Потвърдена", $smallFont, $white, 158, 473)
-FillRoundRect 344 466 150 38 10 $yellow
-$g.DrawString("Чакаща", $smallFont, $white, 376, 473)
-FillRoundRect 518 466 160 38 10 $gray
-$g.DrawString("Отменена", $smallFont, $white, 548, 473)
-
-$g.DrawString("martin9020.github.io/calendar", $smallFont, $subtle, 788, 474)
+$g.DrawString("martin9020.github.io/calendar", $smallFont, $muted, 62, 564)
 
 $bmp.Save($outPath, [System.Drawing.Imaging.ImageFormat]::Png)
 $g.Dispose()
 $bmp.Dispose()
 
 Write-Output $outPath
-
 
