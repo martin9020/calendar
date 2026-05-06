@@ -68,6 +68,16 @@ function statusColors(status) {
   return { bg:"#e8604c", soft:"#fde8e5", text:"#8f241c", border:"#e8604c" };
 }
 
+function reservationKey(reservation) {
+  const name = (reservation.name || "").trim().toLowerCase();
+  const phone = (reservation.phone || "").replace(/\D/g, "");
+  return `${name}|${phone}`;
+}
+
+function uniqueReservationCount(reservations) {
+  return new Set(reservations.map(reservationKey)).size;
+}
+
 function exportCSV(reservations) {
   const header = "Дата,Клиент,Телефон,Бележки,Статус";
   const rows = reservations.map(r =>
@@ -302,6 +312,7 @@ export default function App() {
   const selectedReservations = selectedDates.length
     ? reservations.filter(r=>selectedDates.includes(r.date))
     : [];
+  const uniqueCount = uniqueReservationCount(reservations);
 
   const S = {
     btn: (bg,col)=>({background:bg,color:col,border:"none",borderRadius:10,padding:"10px 16px",fontSize:14,fontWeight:"bold",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}),
@@ -317,7 +328,7 @@ export default function App() {
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
           <div>
             <div style={{fontSize:24,fontWeight:"bold"}}>📅 Резервации</div>
-            <div style={{fontSize:12,opacity:0.7}}>Общо: {reservations.length} резервации</div>
+            <div style={{fontSize:12,opacity:0.7}}>Общо: {uniqueCount} уникални резервации</div>
             <div style={{fontSize:11,opacity:0.7,fontFamily:"sans-serif"}}>
               {cloudMode ? "☁️ Обща база: отворен достъп" : "💾 Локално съхранение"}
             </div>
