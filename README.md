@@ -19,4 +19,4 @@ For shared reservations across devices, connect Supabase:
    - `VITE_SUPABASE_ANON_KEY`
 4. Re-run the GitHub Pages deploy workflow.
 
-When Supabase is configured, the app requires login and uses the shared `reservations` table.
+When Supabase is configured, the app uses the shared `reservations` table. The included schema allows open anonymous access, so anyone with the app link can read and change reservations.

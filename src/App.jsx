@@ -111,14 +111,9 @@ export default function App() {
   const [form, setForm] = useState({name:"",phone:"",notes:"",status:"Потвърдена"});
   const [view, setView] = useState("calendar");
   const [msg, setMsg] = useState("");
-  const [session, setSession] = useState(null);
-  const [authReady, setAuthReady] = useState(!isSupabaseConfigured);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [authMsg, setAuthMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const cloudMode = Boolean(isSupabaseConfigured && session);
+  const cloudMode = isSupabaseConfigured;
 
   const showMessage = useCallback((text) => {
     setMsg(text);
@@ -133,11 +128,11 @@ export default function App() {
       setBusy(true);
       setReservations(await fetchReservations());
     } catch (error) {
-      setAuthMsg(error.message || "Грешка при зареждане от Supabase.");
+      showMessage(`❌ ${error.message || "Грешка при зареждане от Supabase."}`);
     } finally {
       setBusy(false);
     }
-  },[]);
+  },[showMessage]);
 
   useEffect(()=>{
     if (!isSupabaseConfigured) {
@@ -145,25 +140,7 @@ export default function App() {
       return;
     }
 
-    let active = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (!active) return;
-      setSession(data.session);
-      setAuthReady(true);
-      if (data.session) refreshCloud();
-    });
-
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-      setAuthReady(true);
-      if (nextSession) refreshCloud();
-      else setReservations([]);
-    });
-
-    return () => {
-      active = false;
-      data.subscription.unsubscribe();
-    };
+    refreshCloud();
   },[refreshCloud]);
 
   useEffect(()=>{
@@ -306,37 +283,6 @@ export default function App() {
     reader.readAsText(file,"UTF-8"); e.target.value="";
   };
 
-  const signIn = async () => {
-    if (!email.trim() || !password) return;
-    setBusy(true);
-    setAuthMsg("");
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
-    setBusy(false);
-    if (error) setAuthMsg(error.message);
-  };
-
-  const signUp = async () => {
-    if (!email.trim() || !password) return;
-    setBusy(true);
-    setAuthMsg("");
-    const { error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-    });
-    setBusy(false);
-    if (error) setAuthMsg(error.message);
-    else setAuthMsg("Проверете имейла си, ако Supabase поиска потвърждение.");
-  };
-
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    setSession(null);
-    setReservations([]);
-  };
-
   const daysInMonth = getDaysInMonth(year,month);
   const firstDay = getFirstDayOfMonth(year,month);
   const totalCells = Math.ceil((firstDay+daysInMonth)/7)*7;
@@ -350,38 +296,6 @@ export default function App() {
     smallBtn: (bg)=>({background:bg,color:"#fff",border:"none",borderRadius:8,width:36,height:36,fontSize:15,cursor:"pointer",flexShrink:0}),
   };
 
-  if (isSupabaseConfigured && !authReady) {
-    return (
-      <div style={{minHeight:"100vh",display:"grid",placeItems:"center",background:"#faf7f2",fontFamily:"Georgia, serif",color:"#2a2118"}}>
-        <div style={{fontSize:18,fontWeight:"bold",color:"#1a3d24"}}>Зареждане...</div>
-      </div>
-    );
-  }
-
-  if (isSupabaseConfigured && !session) {
-    return (
-      <div style={{minHeight:"100vh",background:"#faf7f2",fontFamily:"Georgia, serif",color:"#2a2118",display:"grid",placeItems:"center",padding:18}}>
-        <div style={{background:"#fff",borderRadius:18,padding:22,width:"100%",maxWidth:420,boxShadow:"0 10px 35px rgba(0,0,0,0.1)"}}>
-          <div style={{fontSize:24,fontWeight:"bold",color:"#1a3d24",marginBottom:6}}>📅 Резервации</div>
-          <div style={{fontSize:13,color:"#6b7b63",fontFamily:"sans-serif",marginBottom:18}}>Влезте, за да виждате общите резервации на всички устройства.</div>
-          <div style={{marginBottom:12}}>
-            <label style={{display:"block",fontWeight:"bold",marginBottom:5,fontSize:14}}>Имейл</label>
-            <input value={email} onChange={e=>setEmail(e.target.value)} type="email" autoComplete="email" style={S.input}/>
-          </div>
-          <div style={{marginBottom:16}}>
-            <label style={{display:"block",fontWeight:"bold",marginBottom:5,fontSize:14}}>Парола</label>
-            <input value={password} onChange={e=>setPassword(e.target.value)} type="password" autoComplete="current-password" style={S.input}/>
-          </div>
-          {authMsg && <div style={{background:"#fff7d7",color:"#6b4a2f",borderRadius:10,padding:"9px 10px",fontSize:13,fontFamily:"sans-serif",marginBottom:12}}>{authMsg}</div>}
-          <div style={{display:"flex",gap:10}}>
-            <button disabled={busy} onClick={signIn} style={{...S.btn(busy?"#9aae9c":"#2c5f3a","#fff"),flex:1,fontSize:16,padding:"13px"}}>Вход</button>
-            <button disabled={busy} onClick={signUp} style={{...S.btn("#e8a820","#fff"),flex:1,fontSize:16,padding:"13px"}}>Регистрация</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div style={{minHeight:"100vh",background:"#faf7f2",fontFamily:"Georgia, serif",color:"#2a2118"}}>
 
@@ -392,7 +306,7 @@ export default function App() {
             <div style={{fontSize:24,fontWeight:"bold"}}>📅 Резервации</div>
             <div style={{fontSize:12,opacity:0.7}}>Общо: {reservations.length} резервации</div>
             <div style={{fontSize:11,opacity:0.7,fontFamily:"sans-serif"}}>
-              {cloudMode ? `☁️ Обща база: ${session.user.email}` : "💾 Локално съхранение"}
+              {cloudMode ? "☁️ Обща база: отворен достъп" : "💾 Локално съхранение"}
             </div>
           </div>
           <button onClick={()=>setView(v=>v==="calendar"?"list":"calendar")} style={S.btn("#ffffff22","#fff")}>
@@ -406,7 +320,6 @@ export default function App() {
             <input type="file" accept=".csv" onChange={handleImport} style={{display:"none"}}/>
           </label>
           {cloudMode && <button onClick={refreshCloud} disabled={busy} style={S.btn("#ffffff22","#fff")}>↻ Обнови</button>}
-          {cloudMode && <button onClick={signOut} style={S.btn("#ffffff22","#fff")}>Изход</button>}
         </div>
       </div>
 

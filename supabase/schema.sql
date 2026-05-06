@@ -15,30 +15,37 @@ drop policy if exists "Authenticated users can read reservations" on public.rese
 drop policy if exists "Authenticated users can create reservations" on public.reservations;
 drop policy if exists "Authenticated users can update reservations" on public.reservations;
 drop policy if exists "Authenticated users can delete reservations" on public.reservations;
+drop policy if exists "Anyone can read reservations" on public.reservations;
+drop policy if exists "Anyone can create reservations" on public.reservations;
+drop policy if exists "Anyone can update reservations" on public.reservations;
+drop policy if exists "Anyone can delete reservations" on public.reservations;
 
-create policy "Authenticated users can read reservations"
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on table public.reservations to anon, authenticated;
+
+create policy "Anyone can read reservations"
   on public.reservations
   for select
-  to authenticated
+  to anon, authenticated
   using (true);
 
-create policy "Authenticated users can create reservations"
+create policy "Anyone can create reservations"
   on public.reservations
   for insert
-  to authenticated
+  to anon, authenticated
   with check (true);
 
-create policy "Authenticated users can update reservations"
+create policy "Anyone can update reservations"
   on public.reservations
   for update
-  to authenticated
+  to anon, authenticated
   using (true)
   with check (true);
 
-create policy "Authenticated users can delete reservations"
+create policy "Anyone can delete reservations"
   on public.reservations
   for delete
-  to authenticated
+  to anon, authenticated
   using (true);
 
 create or replace function public.set_updated_at()
