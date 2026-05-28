@@ -1,43 +1,55 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { isSupabaseConfigured, supabase } from "./supabaseClient";
 
-const AUTH_USER = (import.meta.env.VITE_CALENDAR_AUTH_USER || "").trim();
-const PASSWORD_HASH = (import.meta.env.VITE_CALENDAR_AUTH_PASSWORD_SHA256 || "")
-  .trim()
-  .toLowerCase();
-const SESSION_KEY = "calendar-auth-unlocked-v1";
-
-async function sha256(value) {
-  const bytes = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-function isSessionUnlocked() {
-  try {
-    return window.sessionStorage.getItem(SESSION_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function saveUnlockedSession() {
-  try {
-    window.sessionStorage.setItem(SESSION_KEY, "1");
-  } catch {
-    // If storage is blocked, keep the in-memory unlocked state only.
-  }
-}
+const AUTH_USERS = {
+  martin: ["martinizvorov@gmail.com"],
+  toma: [
+    "martinizvorov+toma@gmail.com",
+    "martinizvorov+toma-title@gmail.com",
+    "martinizvorov+toma-upper@gmail.com"
+  ]
+};
 
 export default function AuthGate({ children }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [unlocked, setUnlocked] = useState(() => !PASSWORD_HASH || isSessionUnlocked());
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [session, setSession] = useState(null);
 
-  if (!PASSWORD_HASH || unlocked) return children;
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setCheckingSession(false);
+      return;
+    }
+
+    let active = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      setSession(data.session || null);
+      setCheckingSession(false);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession || null);
+      setCheckingSession(false);
+    });
+
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  if (checkingSession) return <LoginShell title="Checking access..." />;
+
+  if (!isSupabaseConfigured) {
+    return <LoginShell title="Access is not configured." />;
+  }
+
+  if (session) return children;
 
   const submit = async (event) => {
     event.preventDefault();
@@ -45,35 +57,38 @@ export default function AuthGate({ children }) {
     setBusy(true);
 
     try {
-      const userOk = !AUTH_USER || username.trim().toLowerCase() === AUTH_USER.toLowerCase();
-      const passwordOk = (await sha256(password)) === PASSWORD_HASH;
+      const login = username.trim().toLowerCase();
+      const emails = AUTH_USERS[login] || [];
 
-      if (!userOk || !passwordOk) {
+      if (!emails.length) {
         setError("Wrong username or password.");
         return;
       }
 
-      saveUnlockedSession();
-      setUnlocked(true);
+      const authPassword = login === "toma" ? `${password}${password}` : password;
+
+      for (const email of emails) {
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password: authPassword
+        });
+
+        if (!signInError && data.session) {
+          setSession(data.session);
+          return;
+        }
+      }
+
+      setError("Wrong username or password.");
     } catch {
-      setError("This browser cannot verify the password.");
+      setError("Cannot sign in right now.");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <main style={{
-      minHeight: "100vh",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: 20,
-      background: "linear-gradient(135deg,#15351f,#2c5f3a)",
-      color: "#2a2118",
-      fontFamily: "Georgia, serif",
-      boxSizing: "border-box"
-    }}>
+    <LoginShell>
       <form onSubmit={submit} style={{
         width: "100%",
         maxWidth: 380,
@@ -90,17 +105,15 @@ export default function AuthGate({ children }) {
           Enter the access details to open the reservation calendar.
         </p>
 
-        {AUTH_USER && (
-          <label style={{ display: "block", marginBottom: 12, fontWeight: "bold" }}>
-            Username
-            <input
-              autoComplete="username"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              style={inputStyle}
-            />
-          </label>
-        )}
+        <label style={{ display: "block", marginBottom: 12, fontWeight: "bold" }}>
+          Username
+          <input
+            autoComplete="username"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            style={inputStyle}
+          />
+        </label>
 
         <label style={{ display: "block", marginBottom: 16, fontWeight: "bold" }}>
           Password
@@ -145,6 +158,38 @@ export default function AuthGate({ children }) {
           {busy ? "Checking..." : "Open calendar"}
         </button>
       </form>
+    </LoginShell>
+  );
+}
+
+function LoginShell({ title, children }) {
+  return (
+    <main style={{
+      minHeight: "100vh",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 20,
+      background: "linear-gradient(135deg,#15351f,#2c5f3a)",
+      color: "#2a2118",
+      fontFamily: "Georgia, serif",
+      boxSizing: "border-box"
+    }}>
+      {children || (
+        <div style={{
+          width: "100%",
+          maxWidth: 380,
+          background: "#faf7f2",
+          borderRadius: 18,
+          padding: 24,
+          boxShadow: "0 24px 70px rgba(0,0,0,0.32)",
+          boxSizing: "border-box",
+          color: "#1a3d24",
+          fontWeight: "bold"
+        }}>
+          {title}
+        </div>
+      )}
     </main>
   );
 }

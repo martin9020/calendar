@@ -32,8 +32,6 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_CALENDAR_AUTH_USER: ${{ secrets.VITE_CALENDAR_AUTH_USER }}
-          VITE_CALENDAR_AUTH_PASSWORD_SHA256: ${{ secrets.VITE_CALENDAR_AUTH_PASSWORD_SHA256 }}
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
