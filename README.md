@@ -1,12 +1,6 @@
-# Calendar
+# Reservations
 
-Static React reservation calendar.
-
-Public app URL after GitHub Pages deploy:
-
-```text
-https://martin9020.github.io/calendar/
-```
+Static React reservations app.
 
 By default, reservations are stored in the browser with `localStorage`. This makes the app work without a server, but data is local to each browser/device.
 
@@ -20,3 +14,10 @@ For shared reservations across devices, connect Supabase:
 4. Re-run the GitHub Pages deploy workflow.
 
 When Supabase is configured, the app uses the shared `reservations` table. The included schema allows open anonymous access, so anyone with the app link can read and change reservations.
+
+Optional calendar page access gate:
+
+- `VITE_CALENDAR_AUTH_USER`
+- `VITE_CALENDAR_AUTH_PASSWORD_SHA256`
+
+The password value is checked in the browser before the calendar UI is shown. This hides the GitHub Pages app from casual visitors, but it does not replace Supabase row-level security.
