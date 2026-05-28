@@ -3,11 +3,7 @@ import { isSupabaseConfigured, supabase } from "./supabaseClient";
 
 const AUTH_USERS = {
   martin: ["martinizvorov@gmail.com"],
-  toma: [
-    "martinizvorov+toma@gmail.com",
-    "martinizvorov+toma-title@gmail.com",
-    "martinizvorov+toma-upper@gmail.com"
-  ]
+  toma: ["martinizvorov+toma@gmail.com"]
 };
 
 export default function AuthGate({ children }) {
@@ -65,7 +61,9 @@ export default function AuthGate({ children }) {
         return;
       }
 
-      const authPassword = login === "toma" ? `${password}${password}` : password;
+      const authPassword = login === "toma"
+        ? `${password.toLowerCase()}${password.toLowerCase()}`
+        : password;
 
       for (const email of emails) {
         const { data, error: signInError } = await supabase.auth.signInWithPassword({
