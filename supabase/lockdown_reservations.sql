@@ -1,13 +1,6 @@
-create table if not exists public.reservations (
-  id uuid primary key default gen_random_uuid(),
-  date date not null,
-  name text not null,
-  phone text,
-  notes text,
-  status text not null default 'Потвърдена',
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
+-- Run this once in Supabase SQL Editor for project hqmgnouwuastlsenalre.
+-- It keeps the public holiday site working through public.public_availability
+-- while locking full reservation details and all edits to the two calendar users.
 
 alter table public.reservations enable row level security;
 
@@ -71,28 +64,3 @@ select date, status
 from public.reservations;
 
 grant select on public.public_availability to anon, authenticated;
-
-create or replace function public.set_updated_at()
-returns trigger
-language plpgsql
-as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$;
-
-drop trigger if exists set_reservations_updated_at on public.reservations;
-
-create trigger set_reservations_updated_at
-  before update on public.reservations
-  for each row
-  execute function public.set_updated_at();
-
-do $$
-begin
-  alter publication supabase_realtime add table public.reservations;
-exception
-  when duplicate_object then null;
-end;
-$$;
