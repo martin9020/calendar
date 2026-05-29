@@ -27,3 +27,5 @@ Required GitHub Actions secrets:
 - `SUPABASE_DB_PASSWORD`
 
 After those secrets are added, use migration files for database changes instead of editing the live database manually.
+
+The app uses normal Supabase REST reads/writes. Supabase Realtime is intentionally disabled for `reservations` to avoid continuous WAL/RLS processing.

@@ -5,7 +5,6 @@ import {
   fetchReservations,
   insertReservations,
   isSupabaseConfigured,
-  supabase,
   updateReservations as updateCloudReservations,
 } from "./supabaseClient";
 
@@ -235,13 +234,17 @@ export default function App() {
 
   useEffect(()=>{
     if (!cloudMode) return;
-    const channel = supabase
-      .channel("reservations-changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "reservations" }, refreshCloud)
-      .subscribe();
+
+    const refreshWhenVisible = () => {
+      if (!document.hidden) refreshCloud();
+    };
+
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
 
     return () => {
-      supabase.removeChannel(channel);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   },[cloudMode, refreshCloud]);
 

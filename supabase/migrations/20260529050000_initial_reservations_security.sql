@@ -104,11 +104,3 @@ create trigger set_reservations_updated_at
   before update on public.reservations
   for each row
   execute function public.set_updated_at();
-
-do $$
-begin
-  alter publication supabase_realtime add table public.reservations;
-exception
-  when duplicate_object then null;
-end;
-$$;
