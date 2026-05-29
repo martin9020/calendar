@@ -29,3 +29,19 @@ Required GitHub Actions secrets:
 After those secrets are added, use migration files for database changes instead of editing the live database manually.
 
 The app uses normal Supabase REST reads/writes. Supabase Realtime is intentionally disabled for `reservations` to avoid continuous WAL/RLS processing.
+
+## Visit notifications
+
+The holiday website can call the public `track-visit` Supabase Edge Function. The function stores a hashed visitor IP in `visit_events` and sends a rate-limited ntfy notification.
+
+Required Supabase Edge Function secrets:
+
+- `NTFY_TOPIC`
+- `VISIT_HASH_SALT`
+
+Optional secrets:
+
+- `NTFY_BASE_URL` defaults to `https://ntfy.sh`
+- `NTFY_BEARER_TOKEN` for protected ntfy topics
+- `VISIT_NOTIFY_COOLDOWN_MINUTES` defaults to `1440`
+- `VISIT_ALLOWED_ORIGINS` defaults to `https://martin9020.github.io`

@@ -8,3 +8,6 @@ max_rows = 1000
 
 [db]
 major_version = 15
+
+[functions.track-visit]
+verify_jwt = false

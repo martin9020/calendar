@@ -1,4 +1,4 @@
-name: Deploy Supabase DB
+name: Deploy Supabase
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
     paths:
       - "supabase/config.toml"
       - "supabase/migrations/**"
+      - "supabase/functions/**"
       - ".github/workflows/supabase.yml"
   workflow_dispatch:
 
@@ -31,23 +32,34 @@ jobs:
         id: secrets
         shell: bash
         run: |
-          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_DB_PASSWORD" ]; then
-            echo "::warning::Missing SUPABASE_ACCESS_TOKEN or SUPABASE_DB_PASSWORD. Add them in GitHub Actions secrets, then rerun this workflow."
-            echo "ready=false" >> "$GITHUB_OUTPUT"
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "::warning::Missing SUPABASE_ACCESS_TOKEN. Function deploys and database migrations will be skipped."
+            echo "has_access_token=false" >> "$GITHUB_OUTPUT"
           else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "has_access_token=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [ -z "$SUPABASE_DB_PASSWORD" ]; then
+            echo "::warning::Missing SUPABASE_DB_PASSWORD. Database migrations will be skipped."
+            echo "has_db_password=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_db_password=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Setup Supabase CLI
-        if: steps.secrets.outputs.ready == 'true'
+        if: steps.secrets.outputs.has_access_token == 'true'
         uses: supabase/setup-cli@v1
         with:
           version: latest
 
       - name: Link Supabase project
-        if: steps.secrets.outputs.ready == 'true'
+        if: steps.secrets.outputs.has_access_token == 'true'
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
 
       - name: Push database migrations
-        if: steps.secrets.outputs.ready == 'true'
+        if: steps.secrets.outputs.has_access_token == 'true' && steps.secrets.outputs.has_db_password == 'true'
         run: supabase db push
+
+      - name: Deploy Edge Functions
+        if: steps.secrets.outputs.has_access_token == 'true'
+        run: supabase functions deploy
