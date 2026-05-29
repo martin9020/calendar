@@ -12,6 +12,7 @@ drop policy if exists "Calendar users can read reservations" on public.reservati
 drop policy if exists "Calendar users can create reservations" on public.reservations;
 drop policy if exists "Calendar users can update reservations" on public.reservations;
 drop policy if exists "Calendar users can delete reservations" on public.reservations;
+drop policy if exists "Public can read availability" on public.reservations;
 drop policy if exists "Anyone can read reservations" on public.reservations;
 drop policy if exists "Anyone can create reservations" on public.reservations;
 drop policy if exists "Anyone can update reservations" on public.reservations;
@@ -19,18 +20,26 @@ drop policy if exists "Anyone can delete reservations" on public.reservations;
 
 grant usage on schema public to anon, authenticated;
 revoke all on table public.reservations from anon;
+grant select (date, status) on table public.reservations to anon;
 grant select, insert, update, delete on table public.reservations to authenticated;
 
 create or replace function public.is_calendar_user()
 returns boolean
 language sql
 stable
+set search_path = ''
 as $$
   select lower(coalesce(auth.jwt() ->> 'email', '')) in (
     'martinizvorov@gmail.com',
     'martinizvorov+toma@gmail.com'
   );
 $$;
+
+create policy "Public can read availability"
+  on public.reservations
+  for select
+  to anon
+  using (true);
 
 create policy "Calendar users can read reservations"
   on public.reservations
@@ -59,8 +68,21 @@ create policy "Calendar users can delete reservations"
 
 drop view if exists public.public_availability;
 
-create view public.public_availability as
+create view public.public_availability
+with (security_invoker = true)
+as
 select date, status
 from public.reservations;
 
 grant select on public.public_availability to anon, authenticated;
+
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
