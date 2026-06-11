@@ -1,5 +1,20 @@
-const DEFAULT_ALLOWED_ORIGINS = "https://martin9020.github.io";
+const DEFAULT_ALLOWED_ORIGINS = "https://martin9020.github.io,https://www.steelit.site,https://steelit.site";
 const DEFAULT_COOLDOWN_MINUTES = 1440;
+
+const SITE_META: Record<string, { label: string; title: string; tags: string; clickUrl: string }> = {
+  "ofrinio-holiday-site": {
+    label: "holiday-site",
+    title: "Ofrinio website visit",
+    tags: "house,beach",
+    clickUrl: "https://martin9020.github.io/ofrinio-holiday-site/"
+  },
+  "steelit-portfolio-site": {
+    label: "Steelit website",
+    title: "Steelit website visit",
+    tags: "building,steel",
+    clickUrl: "https://www.steelit.site/"
+  }
+};
 
 const jsonHeaders = {
   "Content-Type": "application/json",
@@ -11,10 +26,15 @@ function textEnv(name: string, fallback = "") {
 }
 
 function getAllowedOrigins() {
-  return textEnv("VISIT_ALLOWED_ORIGINS", DEFAULT_ALLOWED_ORIGINS)
+  const configuredOrigins = textEnv("VISIT_ALLOWED_ORIGINS");
+  const origins = configuredOrigins
+    ? `${DEFAULT_ALLOWED_ORIGINS},${configuredOrigins}`
+    : DEFAULT_ALLOWED_ORIGINS;
+
+  return [...new Set(origins
     .split(",")
     .map((origin) => origin.trim())
-    .filter(Boolean);
+    .filter(Boolean))];
 }
 
 function corsHeaders(origin: string | null) {
@@ -41,6 +61,15 @@ function jsonResponse(body: Record<string, unknown>, status = 200, origin: strin
 function cleanText(value: unknown, maxLength: number) {
   if (typeof value !== "string") return "";
   return value.replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function getSiteMeta(site: string) {
+  return SITE_META[site] || {
+    label: site || "website",
+    title: "Website visit",
+    tags: textEnv("NTFY_TAGS", "bell"),
+    clickUrl: textEnv("VISIT_CLICK_URL", "https://martin9020.github.io/")
+  };
 }
 
 function getClientIp(request: Request) {
@@ -135,17 +164,18 @@ async function insertVisitEvent(
   if (!response.ok) throw new Error(`visit insert failed: ${response.status}`);
 }
 
-async function publishNtfy(message: string) {
+async function publishNtfy(message: string, site: string) {
   const topic = textEnv("NTFY_TOPIC");
   if (!topic) return false;
 
+  const meta = getSiteMeta(site);
   const baseUrl = textEnv("NTFY_BASE_URL", "https://ntfy.sh").replace(/\/+$/, "");
   const token = textEnv("NTFY_BEARER_TOKEN");
   const headers: Record<string, string> = {
-    Title: "Ofrinio website visit",
+    Title: meta.title,
     Priority: textEnv("NTFY_PRIORITY", "3"),
-    Tags: textEnv("NTFY_TAGS", "house,beach"),
-    Click: textEnv("VISIT_CLICK_URL", "https://martin9020.github.io/ofrinio-holiday-site/")
+    Tags: textEnv(`NTFY_TAGS_${site.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}`, meta.tags),
+    Click: textEnv(`VISIT_CLICK_URL_${site.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}`, meta.clickUrl)
   };
 
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -212,10 +242,11 @@ Deno.serve(async (request) => {
     let notificationSent = false;
     const shouldNotify = !alreadyNotified;
     if (shouldNotify) {
+      const meta = getSiteMeta(site);
       const referrerLine = referrer ? `\nReferrer: ${referrer}` : "";
       const countryLine = country ? `\nCountry: ${country}` : "";
-      const message = `New holiday-site visitor\nPath: ${path}${countryLine}${referrerLine}`;
-      notificationSent = await publishNtfy(message);
+      const message = `New ${meta.label} visitor\nPath: ${path}${countryLine}${referrerLine}`;
+      notificationSent = await publishNtfy(message, site);
     }
 
     await insertVisitEvent(supabaseUrl, secretKey, {
