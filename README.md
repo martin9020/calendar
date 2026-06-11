@@ -44,4 +44,4 @@ Optional secrets:
 - `NTFY_BASE_URL` defaults to `https://ntfy.sh`
 - `NTFY_BEARER_TOKEN` for protected ntfy topics
 - `VISIT_NOTIFY_COOLDOWN_MINUTES` defaults to `1440`
-- `VISIT_ALLOWED_ORIGINS` adds extra allowed origins; built-in origins are `https://martin9020.github.io`, `https://www.steelit.site`, and `https://steelit.site`
+- `VISIT_ALLOWED_ORIGINS` defaults to `https://martin9020.github.io`
